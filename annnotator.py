@@ -186,6 +186,14 @@ class MainWindow(QMainWindow):
             self.tr("AutoSeg"),
             enabled=False,
         )
+        ManualSeg = action(
+            self.tr("ManualSeg"),
+            lambda: self.clickManualSegBox(),
+            'None',
+            "objects",
+            self.tr("ManualSeg"),
+            enabled=False,
+        )
 
         saveDirectory = action(
             self.tr("Save Directory"),
@@ -210,8 +218,25 @@ class MainWindow(QMainWindow):
             'None',
             "objects",
             self.tr("Start drawing points"),
-            enabled=False,
+            enabled=True,
         )
+        createRectangleMode = action(
+            self.tr("Create Rectangle"),
+            lambda: self.toggleDrawMode(False, createMode="rectangle"),
+            'None',
+            "objects",
+            self.tr("Start drawing rectangles"),
+            enabled=True,
+        )
+        cleanPrompt = action(
+            self.tr("Clean Prompt"),
+            lambda: self.cleanPrompt(),
+            'None',
+            "objects",
+            self.tr("Clean Prompt"),
+            enabled=True,
+        )
+
         editMode = action(
             self.tr("Edit Polygons"),
             self.setEditMode,
@@ -311,8 +336,11 @@ class MainWindow(QMainWindow):
             saveDirectory=saveDirectory,
             loadSAM=LoadSAM,
             autoSeg=AutoSeg,
+            manualSeg=ManualSeg,
             createMode=createMode,
             createPointMode=createPointMode,
+            createRectangleMode=createRectangleMode,
+            cleanPrompt=cleanPrompt,
             editMode=editMode,
             undoLastPoint=undoLastPoint,
             undo=undo,
@@ -347,7 +375,11 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(saveDirectory)
         self.toolbar.addAction(LoadSAM)
         self.toolbar.addAction(AutoSeg)
+        self.toolbar.addAction(ManualSeg)
         self.toolbar.addAction(createMode)
+        self.toolbar.addAction(createPointMode)
+        self.toolbar.addAction(createRectangleMode)
+        self.toolbar.addAction(cleanPrompt)
         self.toolbar.addAction(editMode)
         self.toolbar.addAction(undoLastPoint)
         self.toolbar.addAction(undo)
@@ -526,7 +558,7 @@ class MainWindow(QMainWindow):
         if directory == '':
             return
         #self.img_list = glob.glob(directory + '/*.{jpg,png,JPG,PNG}')
-        self.img_list = glob.glob(directory + '/*.png')
+        self.img_list = glob.glob(directory + '/*.jpg') + glob.glob(directory + '/*.png')
         self.img_list.sort()
         self.img_len = len(self.img_list)
         if self.img_len == 0:
@@ -565,11 +597,12 @@ class MainWindow(QMainWindow):
 
     def clickLoadSAM(self):
         self.SegAuto = SegAutoMaskPredictor()
-        self.SegAuto.load_model('vit_b')
         self.SegManual = SegManualMaskPredictor()
+        self.SegAuto.load_model('vit_b')
         self.SegManual.load_model('vit_b')
         self.actions.loadSAM.setEnabled(False)
-        self.actions.autoSeg.setEnabled(True)
+        self.actions.autoSeg.setEnabled(False)
+        self.actions.manualSeg.setEnabled(True)
     
     def clickAutoSeg(self):
         if self.SegAuto is None or self.current_img == '':
@@ -580,7 +613,82 @@ class MainWindow(QMainWindow):
                 min_area=0)
         print(len(masks))
         return
-        
+    
+    def getMaxId(self):
+        max_id = -1
+        for label in self.labelList:
+            max_id = max(max_id, label.shape().group_id)
+        return max_id
+    
+    def clickManualSegBox(self):
+        Box = self.canvas.currentBox
+        ClickPos = self.canvas.currentPos
+        ClickNeg = self.canvas.currentNeg
+        if self.SegAuto is None or self.current_img == '' or (Box == None and ClickPos == None and ClickNeg == None):
+            return
+        if Box != None and len(Box) == 2:
+            input_box = [[int(Box[0].x()), int(Box[0].y())], [int(Box[1].x()), int(Box[1].y())]]
+        else:
+            input_box = None
+        input_clicks = []
+        input_types = []
+        if ClickPos != None:
+            for pos in ClickPos:
+                input_clicks.append([int(pos.x()), int(pos.y())])
+                input_types.append(1)
+        if ClickNeg != None:
+            for neg in ClickNeg:
+                input_clicks.append([int(neg.x()), int(neg.y())])
+                input_types.append(0)
+          
+        _, mask, _ = self.SegManual.predict(
+            self.current_img,
+            input_box=input_box,
+            input_point=input_clicks,
+            input_label=input_types,
+            multimask_output=False
+            )
+        mask = mask[0,0].numpy().astype(np.uint8)
+        points_list = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]
+        label, _, group_id,_ = self.labelDialog.popUp(
+            text='None',
+            flags={},
+            group_id=self.getMaxId() + 1,
+        )
+        shape_type = 'polygon'
+        for points in points_list:
+            area = cv2.contourArea(points)
+            if area < 1000 and len(points_list) > 1:
+                continue
+            pointsx = points[:,0,0]
+            pointsy = points[:,0,1]
+
+            shape = Shape(
+                label=label,
+                shape_type=shape_type,
+                group_id=group_id,
+            )
+            for point_index in range(pointsx.shape[0]):
+                shape.addPoint(QtCore.QPointF(pointsx[point_index], pointsy[point_index]))
+            shape.close()
+            self.addLabel(shape)
+
+        self.canvas.currentBox = None
+        self.canvas.currentPos = None
+        self.canvas.currentNeg = None
+        self.canvas.loadShapes([item.shape() for item in self.labelList])
+        self.actions.save.setEnabled(True)
+        self.actions.editMode.setEnabled(True)
+
+
+    def cleanPrompt(self):
+        self.canvas.currentBox = None
+        self.canvas.currentPos = None
+        self.canvas.currentNeg = None
+        self.canvas.current = None
+        self.canvas.setHiding()
+        self.canvas.update()
+
 
 
     def zoomRequest(self, delta, pos):
@@ -625,7 +733,7 @@ class MainWindow(QMainWindow):
         group_id = None
         if not text:
             previous_text = self.labelDialog.edit.text()
-            text, flags, group_id = self.labelDialog.popUp(text)
+            text, flags, group_id, _ = self.labelDialog.popUp(text)
             if not text:
                 self.labelDialog.edit.setText(previous_text)
 
@@ -715,14 +823,22 @@ class MainWindow(QMainWindow):
         if edit:
             self.actions.createMode.setEnabled(True)
             self.actions.createPointMode.setEnabled(True)
+            self.actions.createRectangleMode.setEnabled(True)
+
         else:
             if createMode == "polygon":
                 self.actions.createPointMode.setEnabled(True)
                 self.actions.createMode.setEnabled(False)
+                self.actions.createRectangleMode.setEnabled(True)
 
             elif createMode == "point":
                 self.actions.createMode.setEnabled(True)
                 self.actions.createPointMode.setEnabled(False)
+                self.actions.createRectangleMode.setEnabled(True)
+            elif createMode == "rectangle":
+                self.actions.createMode.setEnabled(True)
+                self.actions.createPointMode.setEnabled(True)
+                self.actions.createRectangleMode.setEnabled(False)
             else:
                 raise ValueError("Unsupported createMode: %s" % createMode)
         self.actions.editMode.setEnabled(not edit)
@@ -774,7 +890,7 @@ class MainWindow(QMainWindow):
         shape = item.shape()
         if shape is None:
             return
-        text, flags, group_id = self.labelDialog.popUp(
+        text, flags, group_id,_ = self.labelDialog.popUp(
             text=shape.label,
             flags=shape.flags,
             group_id=shape.group_id,
