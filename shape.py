@@ -17,6 +17,7 @@ DEFAULT_SELECT_LINE_COLOR = QtGui.QColor(255, 255, 255)  # selected
 DEFAULT_SELECT_FILL_COLOR = QtGui.QColor(0, 255, 0, 155)  # selected
 DEFAULT_VERTEX_FILL_COLOR = QtGui.QColor(0, 255, 0, 255)  # hovering
 DEFAULT_HVERTEX_FILL_COLOR = QtGui.QColor(255, 255, 255, 255)  # hovering
+DEFAULT_Negative_FILL_COLOR = QtGui.QColor(255, 0, 0)  # hovering
 
 
 class Shape(object):
@@ -39,6 +40,7 @@ class Shape(object):
     select_line_color = DEFAULT_SELECT_LINE_COLOR
     select_fill_color = DEFAULT_SELECT_FILL_COLOR
     vertex_fill_color = DEFAULT_VERTEX_FILL_COLOR
+    nvertex_fill_color = DEFAULT_Negative_FILL_COLOR
     hvertex_fill_color = DEFAULT_HVERTEX_FILL_COLOR
     point_type = P_ROUND
     point_size = 3
@@ -131,19 +133,27 @@ class Shape(object):
         x2, y2 = pt2.x(), pt2.y()
         return QtCore.QRectF(x1, y1, x2 - x1, y2 - y1)
 
-    def paint(self, painter):
+    def paint(self, painter, flag = 1, proposal_flag = 0):
         if self.points:
             color = (
                 self.select_line_color if self.selected else self.line_color
             )
+            if proposal_flag == 1:
+                color = (
+                    QtGui.QColor(30, 30, 200)
+                )
             pen = QtGui.QPen(color)
-            # Try using integer sizes for smoother drawing(?)
-            pen.setWidth(max(1, int(round(2.0 / self.scale))))
-            painter.setPen(pen)
+            npen = QtGui.QPen(self.nvertex_fill_color)
+            if flag == 1:
+                # Try using integer sizes for smoother drawing(?)
+                pen.setWidth(max(1, int(round(2.0 / self.scale))))
+                painter.setPen(pen)
+            else:
+                npen.setWidth(max(1, int(round(2.0 / self.scale))))
+                painter.setPen(npen)
 
             line_path = QtGui.QPainterPath()
             vrtx_path = QtGui.QPainterPath()
-
             if self.shape_type == "rectangle":
                 assert len(self.points) in [1, 2]
                 if len(self.points) == 2:
@@ -163,6 +173,9 @@ class Shape(object):
                 for i, p in enumerate(self.points):
                     line_path.lineTo(p)
                     self.drawVertex(vrtx_path, i)
+            elif self.shape_type == "point":
+                for i, p in enumerate(self.points):
+                    self.drawVertex(vrtx_path, i)
             else:
                 line_path.moveTo(self.points[0])
                 # Uncommenting the following line will draw 2 paths
@@ -177,20 +190,26 @@ class Shape(object):
                     line_path.lineTo(self.points[0])
 
             painter.drawPath(line_path)
-            painter.drawPath(vrtx_path)
-            painter.fillPath(vrtx_path, self._vertex_fill_color)
+            if proposal_flag == 0:
+                painter.drawPath(vrtx_path)
+                painter.fillPath(vrtx_path, self._vertex_fill_color)
             if self.fill:
                 color = (
                     self.select_fill_color
                     if self.selected
                     else self.fill_color
                 )
+                if proposal_flag == 1:
+                    color = (
+                        QtGui.QColor(30, 30, 200,100)
+                    )
                 painter.fillPath(line_path, color)
-            cx, cy = self.get_center_points(self.points)
-            if self.group_id is not None:
-                painter.drawText(cx, cy, self.label + ',' + str(self.group_id))
-            else:
-                painter.drawText(cx, cy, self.label)
+            if proposal_flag == 0:
+                cx, cy = self.get_center_points(self.points)
+                if self.group_id is not None:
+                    painter.drawText(cx, cy, self.label + ',' + str(self.group_id))
+                else:
+                    painter.drawText(cx, cy, self.label)
 
     def get_center_points(self, points):
         xs = []

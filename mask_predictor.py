@@ -22,6 +22,7 @@ class SegAutoMaskPredictor:
 
         return self.model
 
+    
     def predict(self, frame, points_per_side, points_per_batch, min_area):
         frame = load_image(frame)
         mask_generator = SamAutomaticMaskGenerator(
@@ -31,7 +32,7 @@ class SegAutoMaskPredictor:
         masks = mask_generator.generate(frame)
 
         return frame, masks
-
+    
     def save_image(self, source, model_type, points_per_side, points_per_batch, min_area):
         read_image = load_image(source)
         image, anns = self.predict(read_image, model_type, points_per_side, points_per_batch, min_area)
@@ -140,6 +141,7 @@ class SegManualMaskPredictor:
         input_label=None,
         multimask_output=False,
     ):
+        frame = load_image(frame)
         predictor = SamPredictor(self.model)
         predictor.set_image(frame)
 

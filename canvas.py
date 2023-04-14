@@ -62,12 +62,16 @@ class Canvas(QtWidgets.QWidget):
                 "linestrip": False,
             },
         )
+        self.app = kwargs.pop("app", None)
         super(Canvas, self).__init__(*args, **kwargs)
         # Initialise local state.
         self.mode = self.EDIT
         self.shapes = []
         self.shapesBackups = []
         self.current = None
+        self.currentPos = None
+        self.currentNeg = None
+        self.currentBox = None
         self.selectedShapes = []  # save the selected shapes here
         self.selectedShapesCopy = []
         # self.line represents:
@@ -102,6 +106,7 @@ class Canvas(QtWidgets.QWidget):
         # Set widget options.
         self.setMouseTracking(True)
         self.setFocusPolicy(QtCore.Qt.WheelFocus)
+
 
 
     def fillDrawing(self):
@@ -255,8 +260,9 @@ class Canvas(QtWidgets.QWidget):
                 self.line.points = [self.current[0], pos]
                 self.line.close()
             elif self.createMode == "point":
-                self.line.points = [self.current[0]]
-                self.line.close()
+                #self.line.points = [self.current[0]]
+                #self.line.close()
+                pass
             self.repaint()
             self.current.highlightClear()
             if QtCore.Qt.RightButton & ev.buttons():
@@ -437,7 +443,7 @@ class Canvas(QtWidgets.QWidget):
                         self.line[0] = self.current[-1]
                         if self.current.isClosed():
                             self.finalise()
-                    elif self.createMode in ["rectangle", "circle", "line"]:
+                    elif self.createMode in ["circle", "line"]:
                         assert len(self.current.points) == 1
                         self.current.points = self.line.points
                         self.finalise()
@@ -446,24 +452,67 @@ class Canvas(QtWidgets.QWidget):
                         self.line[0] = self.current[-1]
                         if int(ev.modifiers()) == QtCore.Qt.ControlModifier:
                             self.finalise()
-                    elif self.createMode == "point":
-                        self.current.addPoint(pos)
-                        self.setHiding()
-                        self.update()
                         
                 elif not self.outOfPixmap(pos):
                     # Create new shape.
-                    self.current = Shape(shape_type=self.createMode)
-                    self.current.addPoint(pos)
                     if self.createMode == "point":
-                        self.setHiding()
-                        self.update()
-                    else:
+                        pass
+                    elif self.createMode == "rectangle":
+                        pass
+                    else: 
+                        self.current = Shape(shape_type=self.createMode)
+                        self.current.addPoint(pos)
                         if self.createMode == "circle":
                             self.current.shape_type = "circle"
                         self.line.points = [pos, pos]
                         self.setHiding()
                         self.drawingPolygon.emit(True)
+                        self.update()
+
+                if self.currentBox:
+                    if self.createMode == "rectangle":
+                        if len(self.currentBox.points) == 1:
+                            self.currentBox.addPoint(pos)
+                            self.currentBox.close()
+                            self.app.clickManualSegBBox()
+                            self.setHiding()
+                            self.update()
+                        else:
+                            self.currentBox = Shape(shape_type=self.createMode)
+                            self.currentBox.addPoint(pos)
+                            self.line.points = [pos, pos]
+                            self.setHiding()
+                            self.drawingPolygon.emit(True)
+                            self.update()
+                    # elif self.createMode == "linestrip":
+                    #     self.currentBox.addPoint(self.line[1])
+                    #     self.line[0] = self.currentBox[-1]
+                elif not self.outOfPixmap(pos):
+                    if self.createMode == "rectangle":
+                        self.currentBox = Shape(shape_type=self.createMode)
+                        self.currentBox.addPoint(pos)
+                        self.line.points = [pos, pos]
+                        self.setHiding()
+                        self.drawingPolygon.emit(True)
+                        self.update()
+
+
+                if self.currentPos:
+                    if self.createMode == "point":
+                        self.currentPos.addPoint(pos)
+                        self.setHiding()
+                        self.update()
+                        self.app.clickManualSegBox()
+                        self.setHiding()
+                        self.update()
+                elif not self.outOfPixmap(pos):
+                    if self.createMode == "point":
+                        self.currentPos = Shape(shape_type=self.createMode)
+                        self.currentPos.addPoint(pos)
+                        self.setHiding()
+                        self.update()
+                        self.app.clickManualSegBox()
+                        self.setHiding()
                         self.update()
             elif self.editing():
                 if self.selectedEdge():
@@ -491,7 +540,7 @@ class Canvas(QtWidgets.QWidget):
                         self.line[0] = self.current[-1]
                         if self.current.isClosed():
                             self.finalise()
-                    elif self.createMode in ["rectangle", "circle", "line"]:
+                    elif self.createMode in ["circle", "line"]:
                         assert len(self.current.points) == 1
                         self.current.points = self.line.points
                         self.finalise()
@@ -500,25 +549,68 @@ class Canvas(QtWidgets.QWidget):
                         self.line[0] = self.current[-1]
                         if int(ev.modifiers()) == QtCore.Qt.ControlModifier:
                             self.finalise()
-                    elif self.createMode == "point":
-                        self.current.addPoint(pos)
-                        self.setHiding()
-                        self.update()
                         
                 elif not self.outOfPixmap(pos):
                     # Create new shape.
-                    self.current = Shape(shape_type=self.createMode)
-                    self.current.addPoint(pos)
                     if self.createMode == "point":
-                        self.setHiding()
-                        self.update()
+                        pass
+                    if self.createMode == "rectangle":
+                        pass
                     else:
+                        self.current = Shape(shape_type=self.createMode)
+                        self.current.addPoint(pos)
                         if self.createMode == "circle":
                             self.current.shape_type = "circle"
                         self.line.points = [pos, pos]
                         self.setHiding()
                         self.drawingPolygon.emit(True)
                         self.update()
+
+                if self.currentBox:
+                    if self.createMode == "rectangle":
+                        if len(self.currentBox.points) == 1:
+                            self.currentBox.addPoint(pos)
+                            self.currentBox.close()
+                            self.app.clickManualSegBBox()
+                            self.setHiding()
+                            self.update()
+                        else:
+                            self.currentBox = Shape(shape_type=self.createMode)
+                            self.currentBox.addPoint(pos)
+                            self.line.points = [pos, pos]
+                            self.setHiding()
+                            self.drawingPolygon.emit(True)
+                            self.update()     
+                    # elif self.createMode == "linestrip":
+                    #     self.currentBox.addPoint(self.line[1])
+                    #     self.line[0] = self.currentBox[-1]                      
+                elif not self.outOfPixmap(pos):
+                    if self.createMode == "rectangle":
+                        self.currentBox = Shape(shape_type=self.createMode)
+                        self.currentBox.addPoint(pos)
+                        self.line.points = [pos, pos]
+                        self.setHiding()
+                        self.drawingPolygon.emit(True)
+                        self.update()
+
+                if self.currentNeg:
+                    if self.createMode == "point":
+                        self.currentNeg.addPoint(pos)
+                        self.setHiding()
+                        self.update()
+                        self.app.clickManualSegBox()
+                        self.setHiding()
+                        self.update()
+                elif not self.outOfPixmap(pos):
+                    if self.createMode == "point":
+                        self.currentNeg = Shape(shape_type=self.createMode)
+                        self.currentNeg.addPoint(pos)
+                        self.setHiding()
+                        self.update()
+                        self.app.clickManualSegBox()
+                        self.setHiding()
+                        self.update()
+
             if self.editing():
                 if (self.selectedVertex()
                     and int(ev.modifiers()) == QtCore.Qt.ShiftModifier
@@ -827,7 +919,12 @@ class Canvas(QtWidgets.QWidget):
                 shape.paint(p)
         if self.current:
             self.current.paint(p)
-            self.line.paint(p)
+        if self.currentPos:
+            self.currentPos.paint(p,flag=1)
+        if self.currentNeg:
+            self.currentNeg.paint(p,flag=0)
+        if self.currentBox:
+            self.currentBox.paint(p)
         if self.selectedShapesCopy:
             for s in self.selectedShapesCopy:
                 s.paint(p)
@@ -842,7 +939,12 @@ class Canvas(QtWidgets.QWidget):
             drawing_shape.addPoint(self.line[1])
             drawing_shape.fill = True
             drawing_shape.paint(p)
-      
+        
+        if len(self.app.sam_mask) > 0:
+            for tmp_mask in self.app.sam_mask:
+                drawing_shape = tmp_mask.copy()
+                drawing_shape.fill = True
+                drawing_shape.paint(p, proposal_flag=1)
         p.end()
 
     def transformPos(self, point):
@@ -868,6 +970,22 @@ class Canvas(QtWidgets.QWidget):
         self.shapes.append(self.current)
         self.storeShapes()
         self.current = None
+        self.currentPos = None
+        self.currentNeg = None
+        self.currentBox = None
+        self.setHiding(False)
+        self.newShape.emit()
+        self.update()
+
+    def finaliseBox(self):
+        assert self.currentBox
+        self.currentBox.close()
+        self.shapes.append(self.currentBox)
+        self.storeShapes()
+        self.current = None
+        self.currentPos = None
+        self.currentNeg = None
+        self.currentBox = None
         self.setHiding(False)
         self.newShape.emit()
         self.update()
