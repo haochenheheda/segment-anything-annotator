@@ -10,6 +10,7 @@ We developed a python UI based on labelme and  for pixel-level annotation. It su
 - [ ] STCN for Video Dataset Annotation
 
 ## Demo
+<img src="demo.gif" alt="Demo" width="720" height="480">
 
 ## Installation
   1. Python>=3.8
