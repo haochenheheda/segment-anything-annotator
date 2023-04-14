@@ -6,6 +6,7 @@ We developed a python UI based on labelme and  for pixel-level annotation. It su
 - [x] Interactive Segmentation by SAM (both boxes and points prompt)
 - [x] Multiple Output Choices
 - [x] Category Annotation
+- [x] Polygon modification
 - [ ] CLIP for Category Proposal
 - [ ] STCN for Video Dataset Annotation
 
