@@ -49,7 +49,7 @@ class MainWindow(QMainWindow):
     def __init__(self, parent=None, global_w=1000, global_h=1800):
         super(MainWindow, self).__init__(parent)
         self.resize(global_w, global_h)
-        self.setWindowTitle('标注平台')
+        self.setWindowTitle('segment-anything-annotator')
         self.canvas = Canvas(self,
             epsilon=10.0,
             double_click='close',
@@ -67,6 +67,7 @@ class MainWindow(QMainWindow):
         self.memory_shapes = []
         self.sam_mask = []
         self.sam_mask_proposal = []
+        self.image_encoded_flag = False
         self.min_point_dis = 4
 
         self.predictor = None
@@ -277,7 +278,7 @@ class MainWindow(QMainWindow):
         self.switchClass = action(
             self.tr("Class On/Off"),
             lambda: self.clickSwitchClass(),
-            'r',
+            'none',
             "objects",
             self.tr("Class On/Off"),
             enabled=True,
@@ -621,7 +622,8 @@ class MainWindow(QMainWindow):
         self.current_output_filename = osp.join(self.current_output_dir, img_name + '.json')
         self.labelList.clear()
         if os.path.isfile(self.current_output_filename):
-            self.loadAnno(self.current_output_filename)            
+            self.loadAnno(self.current_output_filename)
+        self.image_encoded_flag = False
 
 
     def clickFileChoose(self):
@@ -711,10 +713,12 @@ class MainWindow(QMainWindow):
                 #self.button_proposal_list[msk_idx].setPixmap(pixmap)
                 self.button_proposal_list[msk_idx].setIcon(QIcon(pixmap))
                 self.button_proposal_list[msk_idx].setIconSize(QSize(tmp_vis.shape[1], tmp_vis.shape[0]))
+                self.button_proposal_list[msk_idx].setShortcut(str(msk_idx+1))
         else:
             for idx, button_proposal in enumerate(self.button_proposal_list):
                 button_proposal.setText('proprosal{}'.format(idx))
                 button_proposal.setIconSize(QSize(0,0))
+                self.button_proposal_list[idx].setShortcut(str(idx+1))
                 
     def clickManualSegBBox(self):
         img = cv2.imread(self.current_img)[:,:,::-1]
@@ -722,13 +726,16 @@ class MainWindow(QMainWindow):
         if self.predictor is None or self.current_img == '' or Box == None:
             return
         input_box = np.array([Box[0].x(), Box[0].y(), Box[1].x(), Box[1].y()])
-        self.predictor.set_image(img)
-        masks, _, _ = self.predictor.predict(
+        if self.image_encoded_flag == False:
+            self.predictor.set_image(img)
+            self.image_encoded_flag = True
+        masks, iou_prediction, _ = self.predictor.predict(
             point_coords=None,
             point_labels=None,
             box=input_box[None, :],
             multimask_output=True,
         )
+        target_idx = np.argmax(iou_prediction)
         self.show_proposals(masks, 0)
         self.sam_mask_proposal = []
         for msk_idx in range(masks.shape[0]):
@@ -759,7 +766,7 @@ class MainWindow(QMainWindow):
                 shape.close()
                 #self.addLabel(shape)
                 tmp_sam_mask.append(shape)
-            if msk_idx == 0:
+            if msk_idx == target_idx:
                 self.sam_mask = tmp_sam_mask
             self.sam_mask_proposal.append(tmp_sam_mask)
 
@@ -789,15 +796,17 @@ class MainWindow(QMainWindow):
             input_clicks = np.array(input_clicks)
             input_types = np.array(input_types)
         
-        
-        self.predictor.set_image(img)
-        masks, _, _ = self.predictor.predict(
+        if self.image_encoded_flag == False:
+            self.predictor.set_image(img)
+            self.image_encoded_flag = True
+        masks, iou_prediction, _ = self.predictor.predict(
             point_coords=input_clicks,
             point_labels=input_types,
             multimask_output=True,
         )
+        
+        target_idx = np.argmax(iou_prediction)
         self.show_proposals(masks,0)
-
         self.sam_mask_proposal = []
         
         for msk_idx in range(masks.shape[0]):
@@ -823,7 +832,7 @@ class MainWindow(QMainWindow):
                 shape.close()
                 #self.addLabel(shape)
                 tmp_sam_mask.append(shape)
-            if msk_idx == 0:
+            if msk_idx == target_idx:
                 self.sam_mask = tmp_sam_mask
             self.sam_mask_proposal.append(tmp_sam_mask)
             
