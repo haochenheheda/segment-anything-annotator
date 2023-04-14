@@ -72,6 +72,6 @@ annotation dock. And you can modify the boundary by draging the points on the bo
 - [ ] Fix bugs and optimize the UI
 
 ## Acknowledgement 
-This repo is built on [SAM]() and [Labelme]().
+This repo is built on [SAM](https://github.com/facebookresearch/segment-anything) and [Labelme]().
 
 
