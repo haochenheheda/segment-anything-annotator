@@ -133,11 +133,15 @@ class Shape(object):
         x2, y2 = pt2.x(), pt2.y()
         return QtCore.QRectF(x1, y1, x2 - x1, y2 - y1)
 
-    def paint(self, painter, flag = 1):
+    def paint(self, painter, flag = 1, proposal_flag = 0):
         if self.points:
             color = (
                 self.select_line_color if self.selected else self.line_color
             )
+            if proposal_flag == 1:
+                color = (
+                    QtGui.QColor(30, 30, 200)
+                )
             pen = QtGui.QPen(color)
             npen = QtGui.QPen(self.nvertex_fill_color)
             if flag == 1:
@@ -186,20 +190,26 @@ class Shape(object):
                     line_path.lineTo(self.points[0])
 
             painter.drawPath(line_path)
-            painter.drawPath(vrtx_path)
-            painter.fillPath(vrtx_path, self._vertex_fill_color)
+            if proposal_flag == 0:
+                painter.drawPath(vrtx_path)
+                painter.fillPath(vrtx_path, self._vertex_fill_color)
             if self.fill:
                 color = (
                     self.select_fill_color
                     if self.selected
                     else self.fill_color
                 )
+                if proposal_flag == 1:
+                    color = (
+                        QtGui.QColor(30, 30, 200,100)
+                    )
                 painter.fillPath(line_path, color)
-            cx, cy = self.get_center_points(self.points)
-            if self.group_id is not None:
-                painter.drawText(cx, cy, self.label + ',' + str(self.group_id))
-            else:
-                painter.drawText(cx, cy, self.label)
+            if proposal_flag == 0:
+                cx, cy = self.get_center_points(self.points)
+                if self.group_id is not None:
+                    painter.drawText(cx, cy, self.label + ',' + str(self.group_id))
+                else:
+                    painter.drawText(cx, cy, self.label)
 
     def get_center_points(self, points):
         xs = []

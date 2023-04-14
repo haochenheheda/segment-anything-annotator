@@ -62,6 +62,7 @@ class Canvas(QtWidgets.QWidget):
                 "linestrip": False,
             },
         )
+        self.app = kwargs.pop("app", None)
         super(Canvas, self).__init__(*args, **kwargs)
         # Initialise local state.
         self.mode = self.EDIT
@@ -473,6 +474,7 @@ class Canvas(QtWidgets.QWidget):
                         if len(self.currentBox.points) == 1:
                             self.currentBox.addPoint(pos)
                             self.currentBox.close()
+                            self.app.clickManualSegBBox()
                             self.setHiding()
                             self.update()
                         else:
@@ -481,10 +483,10 @@ class Canvas(QtWidgets.QWidget):
                             self.line.points = [pos, pos]
                             self.setHiding()
                             self.drawingPolygon.emit(True)
-                            self.update()     
+                            self.update()
                     # elif self.createMode == "linestrip":
                     #     self.currentBox.addPoint(self.line[1])
-                    #     self.line[0] = self.currentBox[-1]                      
+                    #     self.line[0] = self.currentBox[-1]
                 elif not self.outOfPixmap(pos):
                     if self.createMode == "rectangle":
                         self.currentBox = Shape(shape_type=self.createMode)
@@ -494,15 +496,22 @@ class Canvas(QtWidgets.QWidget):
                         self.drawingPolygon.emit(True)
                         self.update()
 
+
                 if self.currentPos:
                     if self.createMode == "point":
                         self.currentPos.addPoint(pos)
+                        self.setHiding()
+                        self.update()
+                        self.app.clickManualSegBox()
                         self.setHiding()
                         self.update()
                 elif not self.outOfPixmap(pos):
                     if self.createMode == "point":
                         self.currentPos = Shape(shape_type=self.createMode)
                         self.currentPos.addPoint(pos)
+                        self.setHiding()
+                        self.update()
+                        self.app.clickManualSegBox()
                         self.setHiding()
                         self.update()
             elif self.editing():
@@ -562,6 +571,7 @@ class Canvas(QtWidgets.QWidget):
                         if len(self.currentBox.points) == 1:
                             self.currentBox.addPoint(pos)
                             self.currentBox.close()
+                            self.app.clickManualSegBBox()
                             self.setHiding()
                             self.update()
                         else:
@@ -588,10 +598,16 @@ class Canvas(QtWidgets.QWidget):
                         self.currentNeg.addPoint(pos)
                         self.setHiding()
                         self.update()
+                        self.app.clickManualSegBox()
+                        self.setHiding()
+                        self.update()
                 elif not self.outOfPixmap(pos):
                     if self.createMode == "point":
                         self.currentNeg = Shape(shape_type=self.createMode)
                         self.currentNeg.addPoint(pos)
+                        self.setHiding()
+                        self.update()
+                        self.app.clickManualSegBox()
                         self.setHiding()
                         self.update()
 
@@ -923,7 +939,12 @@ class Canvas(QtWidgets.QWidget):
             drawing_shape.addPoint(self.line[1])
             drawing_shape.fill = True
             drawing_shape.paint(p)
-      
+        
+        if len(self.app.sam_mask) > 0:
+            for tmp_mask in self.app.sam_mask:
+                drawing_shape = tmp_mask.copy()
+                drawing_shape.fill = True
+                drawing_shape.paint(p, proposal_flag=1)
         p.end()
 
     def transformPos(self, point):

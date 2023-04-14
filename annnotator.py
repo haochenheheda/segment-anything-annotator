@@ -11,9 +11,11 @@ import math
 import argparse
 import numpy as np
 import tempfile
+import torch
 
 from PyQt5.QtWidgets import QWidget, QApplication, QMainWindow, QApplication, QPushButton, QLabel, QFileDialog, QProgressBar, QComboBox, QScrollArea, QDockWidget, QMessageBox
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QIcon, QImage
+from PyQt5.Qt import QSize
 from qtpy.QtCore import Qt
 from qtpy import QtCore
 from qtpy import QtGui, QtWidgets
@@ -32,7 +34,7 @@ from PIL import Image
 from collections import namedtuple
 Click = namedtuple('Click', ['is_positive', 'coords'])
 
-from mask_predictor import SegAutoMaskPredictor, SegManualMaskPredictor
+from segment_anything import sam_model_registry, SamPredictor
 
 
 
@@ -52,17 +54,22 @@ class MainWindow(QMainWindow):
             epsilon=10.0,
             double_click='close',
             num_backups=10,
+            app=self,
         )
 
+        
         self._noSelectionSlot = False
         self.current_output_dir = 'output'
+        os.makedirs(self.current_output_dir, exist_ok=True)
         self.current_output_filename = ''
         self.canvas.zoomRequest.connect(self.zoomRequest)
 
         self.memory_shapes = []
+        self.sam_mask = []
+        self.sam_mask_proposal = []
+        self.min_point_dis = 4
 
-        self.SegAuto = None
-        self.SegManual = None
+        self.predictor = None
 
         self.scroll_values = {
             Qt.Horizontal: {},
@@ -137,22 +144,52 @@ class MainWindow(QMainWindow):
         self.img_progress_bar.setMinimum(0)
         self.img_progress_bar.setMaximum(1)
         self.img_progress_bar.setValue(0)
+        self.button_proposal1 = QPushButton('Proposal1', self)
+        self.button_proposal1.clicked.connect(self.choose_proposal1)
+        self.button_proposal1.setShortcut('1')
+        self.button_proposal2 = QPushButton('Proposal2', self)
+        self.button_proposal2.clicked.connect(self.choose_proposal2)
+        self.button_proposal2.setShortcut('2')
+        self.button_proposal3 = QPushButton('Proposal3', self)
+        self.button_proposal3.clicked.connect(self.choose_proposal3)
+        self.button_proposal3.setShortcut('3')
+        self.button_proposal4 = QPushButton('Proposal4', self)
+        self.button_proposal4.clicked.connect(self.choose_proposal4)
+        self.button_proposal4.setShortcut('4')
+        self.button_proposal_list = [self.button_proposal1, self.button_proposal2, self.button_proposal3, self.button_proposal4]
+        
+        self.class_on_flag = True
+        self.class_on_text = QLabel("Class On", self)
+        
 
-
-        self.scrollArea.move(int(0.02 * global_w), int(0.1 * global_h))
-        self.scrollArea.resize(int(0.75 * global_w), int(0.8 * global_h))
-        self.shape_dock.move(int(0.79 * global_w), (0.1 * global_h))
-        self.shape_dock.resize(int(0.2 * global_w), int(0.8 * global_h))
-        self.button_next.move(int(0.6 * global_w), int(0.9 * global_h))
-        self.button_next.resize(int(0.1 * global_w),int(0.06 * global_h))
-        self.button_last.move(int(0.1 * global_w), int(0.9 * global_h))
-        self.button_last.resize(int(0.1 * global_w),int(0.06 * global_h))
-        self.img_progress_bar.move(int(0.2 * global_w), int(0.9 * global_h))
-        self.img_progress_bar.resize(int(0.4 * global_w),int(0.06 * global_h))
-
+        #naive layout
+        self.scrollArea.move(int(0.02 * global_w), int(0.08 * global_h))
+        self.scrollArea.resize(int(0.75 * global_w), int(0.7 * global_h))
+        self.shape_dock.move(int(0.79 * global_w), int(0.08 * global_h))
+        self.shape_dock.resize(int(0.2 * global_w), int(0.7 * global_h))
+        self.button_next.move(int(0.18 * global_w), int(0.85 * global_h))
+        self.button_next.resize(int(0.1 * global_w),int(0.04 * global_h))
+        self.button_last.move(int(0.01 * global_w), int(0.85 * global_h))
+        self.button_last.resize(int(0.1 * global_w),int(0.04 * global_h))
+        self.class_on_text.move(int(0.01 * global_w), int(0.9 * global_h))
+        self.img_progress_bar.move(int(0.01 * global_w), int(0.8 * global_h))
+        self.img_progress_bar.resize(int(0.3 * global_w),int(0.04 * global_h))
+        
+        self.button_proposal1.resize(int(0.17 * global_w),int(0.14 * global_h))
+        self.button_proposal1.move(int(0.33 * global_w), int(0.8 * global_h))
+        self.button_proposal2.resize(int(0.17 * global_w),int(0.14 * global_h))
+        self.button_proposal2.move(int(0.50 * global_w), int(0.8 * global_h))
+        self.button_proposal3.resize(int(0.17 * global_w),int(0.14 * global_h))
+        self.button_proposal3.move(int(0.67 * global_w), int(0.8 * global_h))
+        self.button_proposal4.resize(int(0.17 * global_w),int(0.14 * global_h))
+        self.button_proposal4.move(int(0.84 * global_w), int(0.8 * global_h))
+        
+        
+        
         self.zoomWidget = ZoomWidget()
 
         action = functools.partial(utils.newAction, self)
+        
 
         categoryFile = action(
             self.tr("Category File"),
@@ -186,12 +223,12 @@ class MainWindow(QMainWindow):
             self.tr("AutoSeg"),
             enabled=False,
         )
-        ManualSeg = action(
-            self.tr("ManualSeg"),
-            lambda: self.clickManualSegBox(),
-            'None',
+        promptSeg = action(
+            self.tr("Accept"),
+            lambda: self.addSamMask(),
+            'a',
             "objects",
-            self.tr("ManualSeg"),
+            self.tr("Accept"),
             enabled=False,
         )
 
@@ -205,7 +242,7 @@ class MainWindow(QMainWindow):
         )
 
         createMode = action(
-            self.tr("Create Polygons"),
+            self.tr("Manual Polygons"),
             lambda: self.toggleDrawMode(False, createMode="polygon"),
             'Ctrl+W',
             "objects",
@@ -213,34 +250,43 @@ class MainWindow(QMainWindow):
             enabled=True,
         )
         createPointMode = action(
-            self.tr("Create Point"),
+            self.tr("Point Prompt"),
             lambda: self.toggleDrawMode(False, createMode="point"),
             'None',
             "objects",
-            self.tr("Start drawing points"),
+            self.tr("Point Prompt"),
             enabled=True,
         )
         createRectangleMode = action(
-            self.tr("Create Rectangle"),
+            self.tr("Box Prompt"),
             lambda: self.toggleDrawMode(False, createMode="rectangle"),
             'None',
             "objects",
-            self.tr("Start drawing rectangles"),
+            self.tr("Box Prompt"),
             enabled=True,
         )
         cleanPrompt = action(
-            self.tr("Clean Prompt"),
+            self.tr("Reject"),
             lambda: self.cleanPrompt(),
-            'None',
+            'r',
             "objects",
-            self.tr("Clean Prompt"),
+            self.tr("Reject"),
+            enabled=True,
+        )
+        
+        self.switchClass = action(
+            self.tr("Class On/Off"),
+            lambda: self.clickSwitchClass(),
+            'r',
+            "objects",
+            self.tr("Class On/Off"),
             enabled=True,
         )
 
         editMode = action(
             self.tr("Edit Polygons"),
             self.setEditMode,
-            'Ctrl+E',
+            'None',
             "edit",
             self.tr("Move and edit the selected polygons"),
             enabled=False,
@@ -299,7 +345,7 @@ class MainWindow(QMainWindow):
         delete = action(
             self.tr("Delete Polygons"),
             self.deleteSelectedShape,
-            'Alt+2',
+            'd',
             "cancel",
             self.tr("Delete the selected polygons"),
             enabled=False,
@@ -334,13 +380,14 @@ class MainWindow(QMainWindow):
             categoryFile=categoryFile,
             imageDirectory=imageDirectory,
             saveDirectory=saveDirectory,
+            switchClass=self.switchClass,
             loadSAM=LoadSAM,
-            autoSeg=AutoSeg,
-            manualSeg=ManualSeg,
+            #autoSeg=AutoSeg,
+            promptSeg=promptSeg,
+            cleanPrompt=cleanPrompt,
             createMode=createMode,
             createPointMode=createPointMode,
             createRectangleMode=createRectangleMode,
-            cleanPrompt=cleanPrompt,
             editMode=editMode,
             undoLastPoint=undoLastPoint,
             undo=undo,
@@ -373,13 +420,14 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(categoryFile)
         self.toolbar.addAction(imageDirectory)
         self.toolbar.addAction(saveDirectory)
+        self.toolbar.addAction(self.switchClass)
         self.toolbar.addAction(LoadSAM)
-        self.toolbar.addAction(AutoSeg)
-        self.toolbar.addAction(ManualSeg)
+        #self.toolbar.addAction(AutoSeg)
+        self.toolbar.addAction(promptSeg)
+        self.toolbar.addAction(cleanPrompt)
         self.toolbar.addAction(createMode)
         self.toolbar.addAction(createPointMode)
         self.toolbar.addAction(createRectangleMode)
-        self.toolbar.addAction(cleanPrompt)
         self.toolbar.addAction(editMode)
         self.toolbar.addAction(undoLastPoint)
         self.toolbar.addAction(undo)
@@ -474,7 +522,7 @@ class MainWindow(QMainWindow):
         dlg.setAcceptMode(QtWidgets.QFileDialog.AcceptSave)
         dlg.setOption(QtWidgets.QFileDialog.DontConfirmOverwrite, False)
         dlg.setOption(QtWidgets.QFileDialog.DontUseNativeDialog, False)
-        basename = self.current_img.split('\\')[-1][:-4]
+        basename = os.path.basename(self.current_img)[:-4]
         if self.output_dir:
             default_labelfile_name = osp.join(
                 self.output_dir, basename + LabelFile.suffix
@@ -533,20 +581,43 @@ class MainWindow(QMainWindow):
             self.current_img = self.img_list[self.current_img_index]
             self.loadImg()
 
-
-
     def clickButtonLast(self):
         if self.current_img_index > 0:
             self.current_img_index -= 1
             self.current_img = self.img_list[self.current_img_index]
             self.loadImg()
 
+
+    def choose_proposal1(self):
+        if len(self.sam_mask_proposal) > 0:
+            self.sam_mask = self.sam_mask_proposal[0]
+            self.canvas.setHiding()
+            self.canvas.update()
+
+    def choose_proposal2(self):
+        if len(self.sam_mask_proposal) > 1:
+            self.sam_mask = self.sam_mask_proposal[1]
+            self.canvas.setHiding()
+            self.canvas.update()
+            
+    def choose_proposal3(self):
+        if len(self.sam_mask_proposal) > 2:
+            self.sam_mask = self.sam_mask_proposal[2]
+            self.canvas.setHiding()
+            self.canvas.update()
+            
+    def choose_proposal4(self):
+        if len(self.sam_mask_proposal) > 3:
+            self.sam_mask = self.sam_mask_proposal[3]
+            self.canvas.setHiding()
+            self.canvas.update()
+            
     def loadImg(self):
         pixmap = QPixmap(self.current_img)
         self.canvas.loadPixmap(pixmap)
         self.img_progress_bar.setValue(self.current_img_index)
 
-        img_name = self.current_img.split('\\')[-1][:-4]
+        img_name = os.path.basename(self.current_img)[:-4]
         self.current_output_filename = osp.join(self.current_output_dir, img_name + '.json')
         self.labelList.clear()
         if os.path.isfile(self.current_output_filename):
@@ -575,7 +646,18 @@ class MainWindow(QMainWindow):
             return
         else:
             self.output_dir = directory
+            os.makedirs(self.output_dir, exist_ok=True)
             return directory
+
+
+    def clickSwitchClass(self):
+        if self.class_on_flag:
+            self.class_on_flag = False
+            self.class_on_text.setText('Class Off')
+        else:
+            self.class_on_flag = True
+            self.class_on_text.setText('Class On')
+
 
     def clickCategoryChoose(self):
         filename, _ = QFileDialog.getOpenFileName(self, 'choose target file','.')
@@ -596,89 +678,183 @@ class MainWindow(QMainWindow):
             pass
 
     def clickLoadSAM(self):
-        self.SegAuto = SegAutoMaskPredictor()
-        self.SegManual = SegManualMaskPredictor()
-        self.SegAuto.load_model('vit_b')
-        self.SegManual.load_model('vit_b')
+        self.sam = sam_model_registry['vit_b'](checkpoint='vit_b.pth')
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.sam.to(device=self.device)
+        self.predictor = SamPredictor(self.sam)
         self.actions.loadSAM.setEnabled(False)
-        self.actions.autoSeg.setEnabled(False)
-        self.actions.manualSeg.setEnabled(True)
+        #self.actions.autoSeg.setEnabled(True)
+        self.actions.promptSeg.setEnabled(True)
     
     def clickAutoSeg(self):
-        if self.SegAuto is None or self.current_img == '':
-            return 
-        _, masks = self.SegAuto.predict(self.current_img, 
-                points_per_side=16, 
-                points_per_batch=64,
-                min_area=0)
-        print(len(masks))
-        return
+        pass
     
     def getMaxId(self):
         max_id = -1
         for label in self.labelList:
             max_id = max(max_id, label.shape().group_id)
         return max_id
-    
-    def clickManualSegBox(self):
+        
+    def show_proposals(self, masks=None, flag=1):
+        if flag != 1:
+            img = cv2.imread(self.current_img)
+            if len(img.shape) == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            for msk_idx in range(masks.shape[0]):
+                tmp_mask = masks[msk_idx]
+                tmp_vis = img.copy()
+                tmp_vis[tmp_mask] = 0.5 * tmp_vis[tmp_mask] + 0.5 * np.array([30,30,220])
+                tmp_vis = cv2.resize(tmp_vis,(int(0.17 * global_w),int(0.14 * global_h)))
+                tmp_vis = tmp_vis.astype(np.uint8)
+                pixmap = QPixmap.fromImage(QImage(tmp_vis, tmp_vis.shape[1], tmp_vis.shape[0], tmp_vis.shape[1] * 3 , QImage.Format_RGB888))
+                #self.button_proposal_list[msk_idx].setPixmap(pixmap)
+                self.button_proposal_list[msk_idx].setIcon(QIcon(pixmap))
+                self.button_proposal_list[msk_idx].setIconSize(QSize(tmp_vis.shape[1], tmp_vis.shape[0]))
+        else:
+            for idx, button_proposal in enumerate(self.button_proposal_list):
+                button_proposal.setText('proprosal{}'.format(idx))
+                button_proposal.setIconSize(QSize(0,0))
+                
+    def clickManualSegBBox(self):
+        img = cv2.imread(self.current_img)[:,:,::-1]
         Box = self.canvas.currentBox
+        if self.predictor is None or self.current_img == '' or Box == None:
+            return
+        input_box = np.array([Box[0].x(), Box[0].y(), Box[1].x(), Box[1].y()])
+        self.predictor.set_image(img)
+        masks, _, _ = self.predictor.predict(
+            point_coords=None,
+            point_labels=None,
+            box=input_box[None, :],
+            multimask_output=True,
+        )
+        self.show_proposals(masks, 0)
+        self.sam_mask_proposal = []
+        for msk_idx in range(masks.shape[0]):
+            mask = masks[msk_idx].astype(np.uint8)
+
+            points_list = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]
+            #label, _, group_id,_ = self.labelDialog.popUp(
+            #    text='None',
+            #    flags={},
+            #    group_id=self.getMaxId() + 1,
+            #)
+            shape_type = 'polygon'
+            tmp_sam_mask = []
+            for points in points_list:
+                area = cv2.contourArea(points)
+                if area < 100 and len(points_list) > 1:
+                    continue
+                pointsx = points[:,0,0]
+                pointsy = points[:,0,1]
+
+                shape = Shape(
+                    label='Object',
+                    shape_type=shape_type,
+                    group_id=self.getMaxId() + 1,
+                )
+                for point_index in range(pointsx.shape[0]):
+                    shape.addPoint(QtCore.QPointF(pointsx[point_index], pointsy[point_index]))
+                shape.close()
+                #self.addLabel(shape)
+                tmp_sam_mask.append(shape)
+            if msk_idx == 0:
+                self.sam_mask = tmp_sam_mask
+            self.sam_mask_proposal.append(tmp_sam_mask)
+
+
+    def clickManualSegBox(self):
+        img = cv2.imread(self.current_img)[:,:,::-1]
         ClickPos = self.canvas.currentPos
         ClickNeg = self.canvas.currentNeg
-        if self.SegAuto is None or self.current_img == '' or (Box == None and ClickPos == None and ClickNeg == None):
+        if self.predictor is None or self.current_img == '' or (ClickPos == None and ClickNeg == None):
             return
-        if Box != None and len(Box) == 2:
-            input_box = [[int(Box[0].x()), int(Box[0].y())], [int(Box[1].x()), int(Box[1].y())]]
-        else:
-            input_box = None
+
         input_clicks = []
         input_types = []
         if ClickPos != None:
             for pos in ClickPos:
                 input_clicks.append([int(pos.x()), int(pos.y())])
                 input_types.append(1)
+
         if ClickNeg != None:
             for neg in ClickNeg:
                 input_clicks.append([int(neg.x()), int(neg.y())])
                 input_types.append(0)
-          
-        _, mask, _ = self.SegManual.predict(
-            self.current_img,
-            input_box=input_box,
-            input_point=input_clicks,
-            input_label=input_types,
-            multimask_output=False
-            )
-        mask = mask[0,0].numpy().astype(np.uint8)
-        points_list = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]
-        label, _, group_id,_ = self.labelDialog.popUp(
-            text='None',
-            flags={},
-            group_id=self.getMaxId() + 1,
+        if len(input_clicks) == 0:
+            input_clicks = None
+            input_types = None
+        else:
+            input_clicks = np.array(input_clicks)
+            input_types = np.array(input_types)
+        
+        
+        self.predictor.set_image(img)
+        masks, _, _ = self.predictor.predict(
+            point_coords=input_clicks,
+            point_labels=input_types,
+            multimask_output=True,
         )
-        shape_type = 'polygon'
-        for points in points_list:
-            area = cv2.contourArea(points)
-            if area < 1000 and len(points_list) > 1:
-                continue
-            pointsx = points[:,0,0]
-            pointsy = points[:,0,1]
+        self.show_proposals(masks,0)
 
-            shape = Shape(
-                label=label,
-                shape_type=shape_type,
-                group_id=group_id,
-            )
-            for point_index in range(pointsx.shape[0]):
-                shape.addPoint(QtCore.QPointF(pointsx[point_index], pointsy[point_index]))
-            shape.close()
-            self.addLabel(shape)
+        self.sam_mask_proposal = []
+        
+        for msk_idx in range(masks.shape[0]):
+            mask = masks[msk_idx].astype(np.uint8)
+            
+            points_list = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]
+            shape_type = 'polygon'
+            tmp_sam_mask = []
+            for points in points_list:
+                area = cv2.contourArea(points)
+                if area < 100 and len(points_list) > 1:
+                    continue
+                pointsx = points[:,0,0]
+                pointsy = points[:,0,1]
 
+                shape = Shape(
+                    label='Object',
+                    shape_type=shape_type,
+                    group_id=self.getMaxId() + 1,
+                )
+                for point_index in range(pointsx.shape[0]):
+                    shape.addPoint(QtCore.QPointF(pointsx[point_index], pointsy[point_index]))
+                shape.close()
+                #self.addLabel(shape)
+                tmp_sam_mask.append(shape)
+            if msk_idx == 0:
+                self.sam_mask = tmp_sam_mask
+            self.sam_mask_proposal.append(tmp_sam_mask)
+            
+    def addSamMask(self):
+        if len(self.sam_mask) > 0:
+            label = 'Object'
+            group_id = self.getMaxId() + 1
+            if self.class_on_flag:
+                label, _, group_id,_ = self.labelDialog.popUp(
+                    text=label,
+                    flags={},
+                    group_id=group_id,
+                )
+            if label == None:
+                label = 'Object'
+            if type(group_id) != int:
+                group_id=self.getMaxId() + 1
+            for sam_mask in self.sam_mask:
+                sam_mask.label = label
+                sam_mask.group_id = group_id
+                self.addLabel(sam_mask)
         self.canvas.currentBox = None
         self.canvas.currentPos = None
         self.canvas.currentNeg = None
+        self.sam_mask = []
+        self.sam_mask_proposal = []
+        self.show_proposals()
         self.canvas.loadShapes([item.shape() for item in self.labelList])
         self.actions.save.setEnabled(True)
         self.actions.editMode.setEnabled(True)
+
 
 
     def cleanPrompt(self):
@@ -686,8 +862,12 @@ class MainWindow(QMainWindow):
         self.canvas.currentPos = None
         self.canvas.currentNeg = None
         self.canvas.current = None
+        self.sam_mask = []
+        self.sam_mask_proposal = []
+        self.show_proposals()
         self.canvas.setHiding()
         self.canvas.update()
+        self.actions.editMode.setEnabled(True)
 
 
 
@@ -1130,13 +1310,13 @@ def get_parser():
     parser = argparse.ArgumentParser(description="pixel annotator by GroundedSAM")
     parser.add_argument(
         "--app_resolution",
-        default=(800,1400),
+        default='1000,1600',
     )
     return parser
 
 if __name__ == '__main__':
     parser = get_parser()
-    global_h, global_w = parser.parse_args().app_resolution
+    global_h, global_w = [int(i) for i in parser.parse_args().app_resolution.split(',')]
     app = QApplication(sys.argv)
     main = MainWindow(global_h=global_h, global_w=global_w)
     main.show()
