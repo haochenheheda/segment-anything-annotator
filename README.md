@@ -59,12 +59,14 @@ You can see several mask proposals below in the boxes: `Proposal1-4`, and you co
 
 `Reject`(shortcut:`r`): reject the proposals and clean the workspace.
 
-`Save`(shortcut:'s'): save annotations to file
-
-`Delete`(shortcut:'d'): delete selected/hightlight objects from annotation dock.
+`Save`(shortcut:'s'): save annotations to file. Do not forget to save your annotation for each image, or it will be lost when you switch to the next image.
 
 `Edit Polygons`: in this mode, you could modify the annotated objects, such as changing the category labels or ids by double click on object items in the
 annotation dock. And you can modify the boundary by draging the points on the boundary.
+
+`Delete`(shortcut:'d'): under `Edit Mode`, delete selected/hightlight objects from annotation dock.
+
+`Reduce Point`: under `Edit Mode`, if you find the polygon is too dense to edit, you could use this button to reduce the points on the selected polygons. But this will slightly reduce the annotation quality.
 
 `Zoom in/out`: press 'CTRL' and scroll wheel on the mouse
 
