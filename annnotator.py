@@ -48,9 +48,10 @@ class MainWindow(QMainWindow):
 
     FIT_WINDOW, FIT_WIDTH, MANUAL_ZOOM = 0, 1, 2
 
-    def __init__(self, parent=None, global_w=1000, global_h=1800):
+    def __init__(self, parent=None, global_w=1000, global_h=1800, model_type='vit_b'):
         super(MainWindow, self).__init__(parent)
         self.resize(global_w, global_h)
+        self.model_type = model_type
         self.setWindowTitle('segment-anything-annotator')
         self.canvas = Canvas(self,
             epsilon=10.0,
@@ -682,7 +683,8 @@ class MainWindow(QMainWindow):
             pass
 
     def clickLoadSAM(self):
-        self.sam = sam_model_registry['vit_b'](checkpoint='vit_b.pth')
+        download_model(self.model_type)
+        self.sam = sam_model_registry[self.model_type](checkpoint='{}.pth'.format(self.model_type))
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.sam.to(device=self.device)
         self.predictor = SamPredictor(self.sam)
@@ -1323,12 +1325,17 @@ def get_parser():
         "--app_resolution",
         default='1000,1600',
     )
+    parser.add_argument(
+        "--model_type",
+        default='vit_b',
+    )   
     return parser
 
 if __name__ == '__main__':
     parser = get_parser()
     global_h, global_w = [int(i) for i in parser.parse_args().app_resolution.split(',')]
+    model_type = parser.parse_args().model_type
     app = QApplication(sys.argv)
-    main = MainWindow(global_h=global_h, global_w=global_w)
+    main = MainWindow(global_h=global_h, global_w=global_w, model_type=model_type)
     main.show()
     sys.exit(app.exec_())
