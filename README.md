@@ -23,8 +23,12 @@ Any feedback or suggestions are welcomed. We will continuously add features and 
 ### 1. Start the Annotation Platform
 
 ```
-python annnotator.py --app_resolution 1000,1600 --model_type vit_b  #model_type in [vit_b, vit_l, vit_h], default: vit_b
+python annnotator.py --app_resolution 1000,1600 --model_type vit_b --keep_input_size True --max_size 720
 ```
+`--model_type`: vit_b, vit_l, vit_h
+
+`--keep_input_size`: `True`: keep the origin image size for SAM; `False`: resize the input image to `--max_size` (save GPU memory)
+
 ### 2. Load the category list file if you want to annotate object categories.
 Click the `Category File` on the top tool bar and choose your own one, such as the `categories.txt` in this repo.
 
