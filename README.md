@@ -22,7 +22,7 @@ We developed a python UI based on labelme and segment-anything for pixel-level a
 ### 1. Start the Annotation Platform
 
 ```
-python annnotator.py --app_resolution 1000,1600 
+python annnotator.py --app_resolution 1000,1600 --model_type vit_b  #model_type in [vit_b, vit_l, vit_h], default: vit_b
 ```
 ### 2. Load the category list file if you want to annotate object categories.
 Click the `Category File` on the top tool bar and choose your own one, such as the `categories.txt` in this repo.
@@ -45,7 +45,7 @@ Click the 'Save Directory' on the top tool bar to specify the fold for saving th
 ```
 
 ### 4. Load SAM model
-Click the "Load SAM" on the top tool bar to load the SAM model. The model will be automatically downloaded at the first time. Please be patient.
+Click the "Load SAM" on the top tool bar to load the SAM model. The model will be automatically downloaded at the first time. Please be patient. Or you can manually download the [models](https://github.com/facebookresearch/segment-anything#model-checkpoints) and put them in the root directory named `vit_b.pth`, `vit_l.pth` and `vit_h.pth`.
 
 ### 5. Annotating Functions
 `Manual Polygons`: manually add masks by clicking on the boundary of the objects, just like the Labelme (Press right button and drag to draw the arcs easily).
