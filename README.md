@@ -71,6 +71,8 @@ annotation dock. And you can modify the boundary by draging the points on the bo
 
 `Zoom in/out`: press 'CTRL' and scroll wheel on the mouse
 
+`Class On/Off`: if the Class is turned on, a dialog will show after you accept a mask to record category and id, or the catgeory will be default value "Object".
+
 ## To Do
 - [ ] CLIP for Category Proposal
 - [ ] STCN for Video Dataset Annotation
