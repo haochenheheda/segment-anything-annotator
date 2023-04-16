@@ -713,7 +713,7 @@ class MainWindow(QMainWindow):
             for msk_idx in range(masks.shape[0]):
                 tmp_mask = masks[msk_idx]
                 tmp_vis = img.copy()
-                tmp_vis[tmp_mask] = 0.5 * tmp_vis[tmp_mask] + 0.5 * np.array([30,30,220])
+                tmp_vis[tmp_mask > 0] = 0.5 * tmp_vis[tmp_mask > 0] + 0.5 * np.array([30,30,220])
                 tmp_vis = cv2.resize(tmp_vis,(int(0.17 * global_w),int(0.14 * global_h)))
                 tmp_vis = tmp_vis.astype(np.uint8)
                 pixmap = QPixmap.fromImage(QImage(tmp_vis, tmp_vis.shape[1], tmp_vis.shape[0], tmp_vis.shape[1] * 3 , QImage.Format_RGB888))
