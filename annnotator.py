@@ -48,10 +48,13 @@ class MainWindow(QMainWindow):
 
     FIT_WINDOW, FIT_WIDTH, MANUAL_ZOOM = 0, 1, 2
 
-    def __init__(self, parent=None, global_w=1000, global_h=1800, model_type='vit_b'):
+    def __init__(self, parent=None, global_w=1000, global_h=1800, model_type='vit_b', keep_input_size=True, max_size=1080):
         super(MainWindow, self).__init__(parent)
         self.resize(global_w, global_h)
         self.model_type = model_type
+        self.keep_input_size = keep_input_size
+        self.max_size = float(max_size)
+
         self.setWindowTitle('segment-anything-annotator')
         self.canvas = Canvas(self,
             epsilon=10.0,
@@ -723,13 +726,39 @@ class MainWindow(QMainWindow):
                 button_proposal.setText('proprosal{}'.format(idx))
                 button_proposal.setIconSize(QSize(0,0))
                 self.button_proposal_list[idx].setShortcut(str(idx+1))
-                
+
+    def transform_input(self, image, box=None, points=None):
+        if self.keep_input_size == True:
+            return image, box, points
+        else:
+            h,w = image.shape[:2]
+            scale_ratio = self.max_size / max(h,w)
+            image = cv2.resize(image, (int(w*scale_ratio), int(h*scale_ratio)))
+            if box is not None:
+                box = box * scale_ratio
+            if points is not None:
+                points = points * scale_ratio
+            return image, box, points
+    
+    def transform_output(self, masks, size):
+        if self.keep_input_size == True:
+            return masks
+        else:
+            h,w = size
+            N = masks.shape[0]
+            new_masks = np.zeros((N,h,w), dtype=np.uint8)
+            for idx in range(N):
+                new_masks[idx] = cv2.resize(masks[idx], (w,h))
+            return new_masks
+
     def clickManualSegBBox(self):
-        img = cv2.imread(self.current_img)[:,:,::-1]
         Box = self.canvas.currentBox
         if self.predictor is None or self.current_img == '' or Box == None:
             return
+        img = cv2.imread(self.current_img)[:,:,::-1]
+        rh, rw = img.shape[:2]
         input_box = np.array([Box[0].x(), Box[0].y(), Box[1].x(), Box[1].y()])
+        img, input_box, _ = self.transform_input(img, box=input_box)
         if self.image_encoded_flag == False:
             self.predictor.set_image(img)
             self.image_encoded_flag = True
@@ -739,6 +768,8 @@ class MainWindow(QMainWindow):
             box=input_box[None, :],
             multimask_output=True,
         )
+        masks = self.transform_output(masks.astype(np.uint8), (rh,rw))
+
         target_idx = np.argmax(iou_prediction)
         self.show_proposals(masks, 0)
         self.sam_mask_proposal = []
@@ -746,11 +777,6 @@ class MainWindow(QMainWindow):
             mask = masks[msk_idx].astype(np.uint8)
 
             points_list = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]
-            #label, _, group_id,_ = self.labelDialog.popUp(
-            #    text='None',
-            #    flags={},
-            #    group_id=self.getMaxId() + 1,
-            #)
             shape_type = 'polygon'
             tmp_sam_mask = []
             for points in points_list:
@@ -776,11 +802,12 @@ class MainWindow(QMainWindow):
 
 
     def clickManualSegBox(self):
-        img = cv2.imread(self.current_img)[:,:,::-1]
         ClickPos = self.canvas.currentPos
         ClickNeg = self.canvas.currentNeg
         if self.predictor is None or self.current_img == '' or (ClickPos == None and ClickNeg == None):
             return
+        img = cv2.imread(self.current_img)[:,:,::-1]
+        rh, rw = img.shape[:2]
 
         input_clicks = []
         input_types = []
@@ -799,7 +826,9 @@ class MainWindow(QMainWindow):
         else:
             input_clicks = np.array(input_clicks)
             input_types = np.array(input_types)
-        
+
+        img, _, input_clicks = self.transform_input(img, points=input_clicks)
+
         if self.image_encoded_flag == False:
             self.predictor.set_image(img)
             self.image_encoded_flag = True
@@ -808,6 +837,7 @@ class MainWindow(QMainWindow):
             point_labels=input_types,
             multimask_output=True,
         )
+        masks = self.transform_output(masks.astype(np.uint8), (rh,rw))
         
         target_idx = np.argmax(iou_prediction)
         self.show_proposals(masks,0)
@@ -845,11 +875,15 @@ class MainWindow(QMainWindow):
             label = 'Object'
             group_id = self.getMaxId() + 1
             if self.class_on_flag:
-                label, _, group_id,_ = self.labelDialog.popUp(
+                xx = self.labelDialog.popUp(
                     text=label,
                     flags={},
                     group_id=group_id,
                 )
+                if len(xx) == 4:
+                    label, _, group_id,_ = xx
+                else:
+                    label, _, group_id = xx
             if label == None:
                 label = 'Object'
             if type(group_id) != int:
@@ -926,7 +960,11 @@ class MainWindow(QMainWindow):
         group_id = None
         if not text:
             previous_text = self.labelDialog.edit.text()
-            text, flags, group_id, _ = self.labelDialog.popUp(text)
+            xx = self.labelDialog.popUp(text)
+            if len(xx) == 4:
+                text, flags, group_id, _ = xx
+            else:
+                text, flags, group_id = xx
             if not text:
                 self.labelDialog.edit.setText(previous_text)
 
@@ -1083,11 +1121,15 @@ class MainWindow(QMainWindow):
         shape = item.shape()
         if shape is None:
             return
-        text, flags, group_id,_ = self.labelDialog.popUp(
+        xx = self.labelDialog.popUp(
             text=shape.label,
             flags=shape.flags,
             group_id=shape.group_id,
         )
+        if len(xx) == 4:
+            text, flags, group_id,_ = xx
+        else:
+            text, flags, group_id = xx
         if text is None:
             return
         if not self.validateLabel(text):
@@ -1328,6 +1370,15 @@ def get_parser():
     parser.add_argument(
         "--model_type",
         default='vit_b',
+    )
+    parser.add_argument(
+        "--keep_input_size",
+        type=bool,
+        default=True,
+    )   
+    parser.add_argument(
+        "--max_size",
+        default=720,
     )   
     return parser
 
@@ -1335,7 +1386,9 @@ if __name__ == '__main__':
     parser = get_parser()
     global_h, global_w = [int(i) for i in parser.parse_args().app_resolution.split(',')]
     model_type = parser.parse_args().model_type
+    keep_input_size = parser.parse_args().keep_input_size
+    max_size = parser.parse_args().max_size
     app = QApplication(sys.argv)
-    main = MainWindow(global_h=global_h, global_w=global_w, model_type=model_type)
+    main = MainWindow(global_h=global_h, global_w=global_w, model_type=model_type, keep_input_size=keep_input_size, max_size=max_size)
     main.show()
     sys.exit(app.exec_())
