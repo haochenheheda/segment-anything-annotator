@@ -21,11 +21,13 @@ from qtpy import QtCore
 from qtpy import QtGui, QtWidgets
 from canvas import Canvas
 import utils
+from utils.download_model import download_model
 
 from labelme.widgets import ToolBar, UniqueLabelQListWidget, LabelDialog, LabelListWidget, LabelListWidgetItem, ZoomWidget
 from labelme import PY2
 from labelme.label_file import LabelFile
 from labelme.label_file import LabelFileError
+
 
 from shape import Shape
 
