@@ -207,9 +207,9 @@ class Shape(object):
             if proposal_flag == 0:
                 cx, cy = self.get_center_points(self.points)
                 if self.group_id is not None:
-                    painter.drawText(cx, cy, self.label + ',' + str(self.group_id))
+                    painter.drawText(int(cx), int(cy), self.label + ',' + str(self.group_id))
                 else:
-                    painter.drawText(cx, cy, self.label)
+                    painter.drawText(int(cx), int(cy), self.label)
 
     def get_center_points(self, points):
         xs = []
