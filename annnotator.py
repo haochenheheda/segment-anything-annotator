@@ -653,8 +653,9 @@ class MainWindow(QMainWindow):
         if directory == '':
             return
         else:
-            self.output_dir = directory
-            os.makedirs(self.output_dir, exist_ok=True)
+            self.current_output_dir = directory
+            os.makedirs(self.current_output_dir, exist_ok=True)
+            self.loadImg()
             return directory
 
 
