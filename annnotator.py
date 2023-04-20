@@ -702,7 +702,8 @@ class MainWindow(QMainWindow):
     def getMaxId(self):
         max_id = -1
         for label in self.labelList:
-            max_id = max(max_id, label.shape().group_id)
+            if label.shape().group_id != None:
+                max_id = max(max_id, int(label.shape().group_id))
         return max_id
         
     def show_proposals(self, masks=None, flag=1):
