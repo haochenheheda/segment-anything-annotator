@@ -3,13 +3,18 @@ We developed a python UI based on labelme and segment-anything for pixel-level a
 
 Any feedback or suggestions are welcomed. We will continuously add features and fix bugs. 👀👀👀
 
+
+## News
+`21 Apr`: Add annotation script for video dataset. See [Video Usage](https://github.com/haochenheheda/segment-anything-annotator/edit/master/README.md#video-usage) for the details.
+<img src="demo_jntm.gif" alt="VIdeo_Demo" width="720" height="480">
 ## Features
 - [x] Interactive Segmentation by SAM (both boxes and points prompt)
 - [x] Multiple Output Choices
 - [x] Category Annotation
 - [x] Polygon modification
 - [ ] CLIP for Category Proposal
-- [ ] STCN for Video Dataset Annotation
+- [x] STCN for Video Dataset Annotation
+- [ ] Annotation convert scripts: -> Labelme/COCO/Youtube-VIS
 
 ## Demo
 <img src="demo.gif" alt="Demo" width="720" height="480">
@@ -77,10 +82,62 @@ annotation dock. And you can modify the boundary by draging the points on the bo
 
 `Class On/Off`: if the Class is turned on, a dialog will show after you accept a mask to record category and id, or the catgeory will be default value "Object".
 
+
+## Video Usage
+### 1. clone [STCN](), download the [stcn.pth]() and put them in the root directory like this:
+```
+-| segment-anything-annotator
+    -| annotation_video.py
+    .....
+    -| STCN
+    -| stcn.pth
+```
+
+### 2. Start the Annotation Platform
+```
+python annotator_video.py --app_resolution 1000,1600 --model_type vit_b --keep_input_size True --max_size 720 --max_size_STCN 600
+```
+`--model_type`: vit_b, vit_l, vit_h
+`--keep_input_size`: `True`: keep the origin image size for SAM; `False`: resize the input image to `--max_size` (save GPU memory)
+`--max_size_STCN`: the maximum input image size for STCN (don't be too large) 
+
+### 3. Specify the video and save folds
+Click 'Video Directory' and 'Save Directory'.
+The folds containing videos should be structured like this:
+```
+-| video_fold
+    -| video1
+        -| 00000.jpg
+        -| 00001.jpg
+        ...
+    -| video2
+        -| 00000.jpg
+        -| 00001.jpg     
+    ...
+```
+### 3. Load STCN and SAM
+Click 'Load STCN' and 'Load SAM'.
+
+### 4. Video Annotating Functions
+(a) Finish the annotations of the first frame with SAM
+
+(b) Press and hold `left control`, then press `left mouse button` to select the objects you want to track (should be highlighted by colors)
+
+(c) Click `add object to memory` to initialize the tracklets
+
+(d) move to next frame, and click `Propagate` to obtain tracked masks on new frame. (the results will be automatically saved when you change frames)
+
+(e) if the propagated masks are not good enough, press 'e' to enter Edit mode, then you could manually correct the masks. You could also use `Add as key frame` to add a certain frame as reference to improve the propagation stability.
+
+ShortCuts: `b`: `last frame`, `n`: `next_frame`, `e`: `edit model`, 'a': 'accept proposal', `r`: `reject proposal`, `d`: `delete`, `s`: `save`, `space`: `propagate`
+
+
+
 ## To Do
 - [ ] CLIP for Category Proposal
-- [ ] STCN for Video Dataset Annotation
+- [x] STCN for Video Dataset Annotation
 - [ ] Fix bugs and optimize the UI
+- [ ] Annotation Files -> Labelme Format/COCO Format/Youtube-VIS Format
 
 ## Acknowledgement 
 This repo is built on [SAM](https://github.com/facebookresearch/segment-anything) and [Labelme]().
