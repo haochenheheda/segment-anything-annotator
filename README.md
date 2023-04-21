@@ -129,7 +129,7 @@ Click 'Load STCN' and 'Load SAM'.
 
 (e) if the propagated masks are not good enough, press 'e' to enter Edit mode, then you could manually correct the masks. You could also use `Add as key frame` to add a certain frame as reference to improve the propagation stability.
 
-ShortCuts: `b`: `last frame`, `n`: `next_frame`, `e`: `edit model`, 'a': 'accept proposal', `r`: `reject proposal`, `d`: `delete`, `s`: `save`, `space`: `propagate`
+ShortCuts: `b`: `last frame`, `n`: `next frame`, `e`: `edit model`, `a`: `accept proposal`, `r`: `reject proposal`, `d`: `delete`, `s`: `save`, `space`: `propagate`
 
 
 
