@@ -84,7 +84,7 @@ annotation dock. And you can modify the boundary by draging the points on the bo
 
 
 ## Video Usage
-### 1. clone [STCN](), download the [stcn.pth]() and put them in the root directory like this:
+### 1. clone [STCN](https://github.com/hkchengrex/STCN), download the [stcn.pth](https://drive.google.com/file/d/1mRrE0uCI2ktdWlUgapJI_KmgeIiF2eOm/view) and put them in the root directory like this:
 ```
 -| segment-anything-annotator
     -| annotation_video.py
