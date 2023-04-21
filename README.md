@@ -5,7 +5,7 @@ Any feedback or suggestions are welcomed. We will continuously add features and 
 
 
 ## News
-`21 Apr`: Add annotation script for video dataset. See [Video Usage](https://github.com/haochenheheda/segment-anything-annotator/edit/master/README.md#video-usage) for the details.
+`21 Apr`: Add annotation script for video dataset. See [Video Usage](https://github.com/haochenheheda/segment-anything-annotator#video-usage) for the details.
 <img src="demo_jntm.gif" alt="VIdeo_Demo" width="720" height="480">
 ## Features
 - [x] Interactive Segmentation by SAM (both boxes and points prompt)
