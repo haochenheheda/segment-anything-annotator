@@ -621,6 +621,7 @@ class MainWindow(QMainWindow):
             
     def loadImg(self):
         pixmap = QPixmap(self.current_img)
+        pixmap = pixmap.scaled(int(0.75 * global_w), int(0.7 * global_h))
         self.canvas.loadPixmap(pixmap)
         self.img_progress_bar.setValue(self.current_img_index)
 

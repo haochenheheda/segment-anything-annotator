@@ -679,8 +679,8 @@ class MainWindow(QMainWindow):
             
     def loadImg(self):
         pixmap = QPixmap(self.current_img)
+        pixmap = pixmap.scaled(int(0.75 * global_w), int(0.7 * global_h))
         self.canvas.loadPixmap(pixmap)
-        self.img_progress_bar.setValue(self.current_img_index)
 
         img_name = os.path.basename(self.current_img)[:-4]
         video_name = os.path.basename(self.current_video)
@@ -689,6 +689,10 @@ class MainWindow(QMainWindow):
         if os.path.isfile(self.current_output_filename):
             self.loadAnno(self.current_output_filename)
         self.image_encoded_flag = False
+        
+        self.img_progress_bar.setMinimum(0)
+        self.img_progress_bar.setMaximum(self.img_len-1)
+        self.img_progress_bar.setValue(self.current_img_index)
 
 
     def clickFileChoose(self):
@@ -712,8 +716,6 @@ class MainWindow(QMainWindow):
             return
         self.current_img_index = 0
         self.current_img = self.img_list[self.current_img_index]
-        self.img_progress_bar.setMinimum(0)
-        self.img_progress_bar.setMaximum(self.img_len-1)
         self.loadImg()
 
     def clickSaveChoose(self):
@@ -936,7 +938,7 @@ class MainWindow(QMainWindow):
                 shape.close()
                 add_shape.append(shape)
 
-        add_shape_raw = [i for i in cur_shape if i.group_id not in updated_id_list]
+        add_shape_raw = [i for i in cur_shape if int(i.group_id) not in updated_id_list]
         self.labelList.clear()
         for shape in add_shape_raw + add_shape:
             self.addLabel(shape)
@@ -959,7 +961,7 @@ class MainWindow(QMainWindow):
         max_id = -1
         for label in self.labelList:
             if label.shape().group_id != None:
-                max_id = max(max_id, label.shape().group_id)
+                max_id = max(max_id, int(label.shape().group_id))
         return max_id
         
     def show_proposals(self, masks=None, flag=1):
