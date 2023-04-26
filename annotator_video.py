@@ -679,7 +679,7 @@ class MainWindow(QMainWindow):
             
     def loadImg(self):
         pixmap = QPixmap(self.current_img)
-        pixmap = pixmap.scaled(int(0.75 * global_w), int(0.7 * global_h))
+        #pixmap = pixmap.scaled(int(0.75 * global_w), int(0.7 * global_h))
         self.canvas.loadPixmap(pixmap)
 
         img_name = os.path.basename(self.current_img)[:-4]
