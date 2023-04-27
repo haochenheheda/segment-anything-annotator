@@ -6,6 +6,7 @@ Any feedback or suggestions are welcomed. We will continuously add features and 
 
 ## News
 `28 Apr`: Change the output format with labelme format. If you want to use the old output format, please use `backup/annotator.py`.
+
 `21 Apr`: Add annotation script for video dataset. See [Video Usage](https://github.com/haochenheheda/segment-anything-annotator#video-usage) for the details.
 <img src="demo_jntm.gif" alt="VIdeo_Demo" width="720" height="480">
 ## Features
