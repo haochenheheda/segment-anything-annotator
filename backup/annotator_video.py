@@ -519,9 +519,8 @@ class MainWindow(QMainWindow):
             data.update(
                 dict(
                     label=s.label.encode("utf-8") if PY2 else s.label,
-                    points=[[p.x(), p.y()] for p in s.points],
+                    points=[(p.x(), p.y()) for p in s.points],
                     group_id=s.group_id,
-                    description="",
                     shape_type=s.shape_type,
                     flags=s.flags,
                 )
@@ -529,18 +528,8 @@ class MainWindow(QMainWindow):
             return data
 
         shapes = [format_shape(item.shape()) for item in self.labelList]
-        save_data = {
-            "version": "1.0.0",
-            "flags": {},
-            "shapes": shapes,
-            "imagePath": self.current_img,
-            "imageData": "",
-            "imageHeight": self.raw_h,
-            "imageWidth": self.raw_w
-        }
-
         with open(filename, 'w') as f:
-            json.dump(save_data, f)
+            json.dump(shapes, f)
         return True
 
     def setClean(self):
@@ -589,7 +578,7 @@ class MainWindow(QMainWindow):
     def loadAnno(self, filename):
         with open(filename,'r') as f:
             data = json.load(f)
-        for shape in data['shapes']:
+        for shape in data:
             label = shape["label"]
             try:
                 ttt = int(label)
@@ -689,7 +678,6 @@ class MainWindow(QMainWindow):
             self.canvas.update()
             
     def loadImg(self):
-        self.raw_h, self.raw_w = cv2.imread(self.current_img).shape[:2]
         pixmap = QPixmap(self.current_img)
         #pixmap = pixmap.scaled(int(0.75 * global_w), int(0.7 * global_h))
         self.canvas.loadPixmap(pixmap)

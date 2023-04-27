@@ -12,7 +12,6 @@ import argparse
 import numpy as np
 import tempfile
 import torch
-import torch.nn.functional as F
 
 from PyQt5.QtWidgets import QWidget, QApplication, QMainWindow, QApplication, QPushButton, QLabel, QFileDialog, QProgressBar, QComboBox, QScrollArea, QDockWidget, QMessageBox
 from PyQt5.QtGui import QPixmap, QIcon, QImage
@@ -39,13 +38,7 @@ Click = namedtuple('Click', ['is_positive', 'coords'])
 
 from segment_anything import sam_model_registry, SamPredictor
 
-sys.path.insert(0, 'STCN/')
-from model.eval_network import STCN
-import torch
-from torchvision import transforms
-from dataset.range_transform import im_normalization
-from app_inference_core import InferenceCore
-from util.tensor_util import unpad, pad_divide_by
+
 
 
 
@@ -55,13 +48,12 @@ class MainWindow(QMainWindow):
 
     FIT_WINDOW, FIT_WIDTH, MANUAL_ZOOM = 0, 1, 2
 
-    def __init__(self, parent=None, global_w=1000, global_h=1800, model_type='vit_b', keep_input_size=True, max_size=720,max_size_STCN=600):
+    def __init__(self, parent=None, global_w=1000, global_h=1800, model_type='vit_b', keep_input_size=True, max_size=1080):
         super(MainWindow, self).__init__(parent)
         self.resize(global_w, global_h)
         self.model_type = model_type
         self.keep_input_size = keep_input_size
         self.max_size = float(max_size)
-        self.max_size_STCN = float(max_size_STCN)
 
         self.setWindowTitle('segment-anything-annotator')
         self.canvas = Canvas(self,
@@ -85,10 +77,6 @@ class MainWindow(QMainWindow):
         self.min_point_dis = 4
 
         self.predictor = None
-        self.prop_model = None
-        self.processor = None
-        self.tracked_id_list = None
-        self.tracked_label_list = None
 
         self.scroll_values = {
             Qt.Horizontal: {},
@@ -154,34 +142,15 @@ class MainWindow(QMainWindow):
         self.current_img_index = 0
         self.current_img = ''
 
-        self.video_list = []
-        self.video_len = len(self.video_list)
-        self.current_video_index = 0
-        self.current_video = ''
-
-
-        self.button_next = QPushButton('Next Image (n)', self)
+        self.button_next = QPushButton('Next Image', self)
         self.button_next.clicked.connect(self.clickButtonNext)
-        self.button_next.setShortcut('n')
-        self.button_last = QPushButton('Last Image (b)', self)
+        self.button_last = QPushButton('Last Image', self)
         self.button_last.clicked.connect(self.clickButtonLast)
-        self.button_last.setShortcut('b')
-
-        self.button_next_video = QPushButton('Next Video', self)
-        self.button_next_video.clicked.connect(self.clickButtonNextVideo)
-        self.button_last_video = QPushButton('Last Video', self)
-        self.button_last_video.clicked.connect(self.clickButtonLastVideo)
 
         self.img_progress_bar = QProgressBar(self)
         self.img_progress_bar.setMinimum(0)
         self.img_progress_bar.setMaximum(1)
         self.img_progress_bar.setValue(0)
-
-        self.video_progress_bar = QProgressBar(self)
-        self.video_progress_bar.setMinimum(0)
-        self.video_progress_bar.setMaximum(1)
-        self.video_progress_bar.setValue(0)
-
         self.button_proposal1 = QPushButton('Proposal1', self)
         self.button_proposal1.clicked.connect(self.choose_proposal1)
         self.button_proposal1.setShortcut('1')
@@ -191,60 +160,38 @@ class MainWindow(QMainWindow):
         self.button_proposal3 = QPushButton('Proposal3', self)
         self.button_proposal3.clicked.connect(self.choose_proposal3)
         self.button_proposal3.setShortcut('3')
-        self.button_proposal_list = [self.button_proposal1, self.button_proposal2, self.button_proposal3]
-        
-        
-        self.button_add_track = QPushButton('Add objects to memory', self)
-        self.button_add_track.clicked.connect(self.clickAddMemory)
-        self.button_add_key_frame = QPushButton('Add as key frame', self)
-        self.button_add_key_frame.clicked.connect(self.clickAddKeyFrame)
-        self.button_propagate = QPushButton('Propagate (SPACE)', self)
-        self.button_propagate.setShortcut(' ')
-        self.button_propagate.clicked.connect(self.clickPropagate)
-        self.button_clear_track_memory = QPushButton('Clear track memory', self)
-        self.button_clear_track_memory.clicked.connect(self.clickClearTrackMemory)
+        self.button_proposal4 = QPushButton('Proposal4', self)
+        self.button_proposal4.clicked.connect(self.choose_proposal4)
+        self.button_proposal4.setShortcut('4')
+        self.button_proposal_list = [self.button_proposal1, self.button_proposal2, self.button_proposal3, self.button_proposal4]
         
         self.class_on_flag = True
         self.class_on_text = QLabel("Class On", self)
-        self.tracked_object_text = QLabel("Tracked_object:", self)
+        
 
         #naive layout
         self.scrollArea.move(int(0.02 * global_w), int(0.08 * global_h))
         self.scrollArea.resize(int(0.75 * global_w), int(0.7 * global_h))
         self.shape_dock.move(int(0.79 * global_w), int(0.08 * global_h))
         self.shape_dock.resize(int(0.2 * global_w), int(0.7 * global_h))
-        self.button_next.move(int(0.14 * global_w), int(0.82 * global_h))
-        self.button_next.resize(int(0.13 * global_w),int(0.04 * global_h))
-        self.button_last.move(int(0.01 * global_w), int(0.82 * global_h))
-        self.button_last.resize(int(0.13 * global_w),int(0.04 * global_h))
-        self.button_next_video.resize(int(0.13 * global_w),int(0.04 * global_h))
-        self.button_next_video.move(int(0.14 * global_w), int(0.89 * global_h))
-        self.button_last_video.resize(int(0.13 * global_w),int(0.04 * global_h))
-        self.button_last_video.move(int(0.01 * global_w), int(0.89 * global_h))
+        self.button_next.move(int(0.18 * global_w), int(0.85 * global_h))
+        self.button_next.resize(int(0.1 * global_w),int(0.04 * global_h))
+        self.button_last.move(int(0.01 * global_w), int(0.85 * global_h))
+        self.button_last.resize(int(0.1 * global_w),int(0.04 * global_h))
+        self.class_on_text.move(int(0.01 * global_w), int(0.9 * global_h))
         self.img_progress_bar.move(int(0.01 * global_w), int(0.8 * global_h))
-        self.img_progress_bar.resize(int(0.25 * global_w),int(0.02 * global_h))
-        self.video_progress_bar.move(int(0.01 * global_w), int(0.87 * global_h))
-        self.video_progress_bar.resize(int(0.25 * global_w),int(0.02 * global_h))
-
-        self.button_proposal1.resize(int(0.17 * global_w),int(0.14 * global_h))
-        self.button_proposal1.move(int(0.27 * global_w), int(0.8 * global_h))
-        self.button_proposal2.resize(int(0.17 * global_w),int(0.14 * global_h))
-        self.button_proposal2.move(int(0.44 * global_w), int(0.8 * global_h))
-        self.button_proposal3.resize(int(0.17 * global_w),int(0.14 * global_h))
-        self.button_proposal3.move(int(0.61 * global_w), int(0.8 * global_h))
-
+        self.img_progress_bar.resize(int(0.3 * global_w),int(0.04 * global_h))
         
-        self.class_on_text.move(int(0.8 * global_w), int(0.78 * global_h))
-        self.tracked_object_text.resize(int(0.2 * global_w), int(0.04 * global_h))
-        self.tracked_object_text.move(int(0.8 * global_w), int(0.81 * global_h))
-        self.button_add_track.resize(int(0.2 * global_w), int(0.04 * global_h))
-        self.button_add_track.move(int(0.8 * global_w), int(0.85 * global_h))
-        self.button_add_key_frame.resize(int(0.2 * global_w), int(0.04 * global_h))
-        self.button_add_key_frame.move(int(0.8 * global_w), int(0.89 * global_h))
-        self.button_propagate.resize(int(0.2 * global_w), int(0.04 * global_h))
-        self.button_propagate.move(int(0.8 * global_w), int(0.93 * global_h))
-        self.button_clear_track_memory.resize(int(0.2 * global_w), int(0.03 * global_h))
-        self.button_clear_track_memory.move(int(0.8 * global_w), int(0.97 * global_h))
+        self.button_proposal1.resize(int(0.17 * global_w),int(0.14 * global_h))
+        self.button_proposal1.move(int(0.33 * global_w), int(0.8 * global_h))
+        self.button_proposal2.resize(int(0.17 * global_w),int(0.14 * global_h))
+        self.button_proposal2.move(int(0.50 * global_w), int(0.8 * global_h))
+        self.button_proposal3.resize(int(0.17 * global_w),int(0.14 * global_h))
+        self.button_proposal3.move(int(0.67 * global_w), int(0.8 * global_h))
+        self.button_proposal4.resize(int(0.17 * global_w),int(0.14 * global_h))
+        self.button_proposal4.move(int(0.84 * global_w), int(0.8 * global_h))
+        
+        
         
         self.zoomWidget = ZoomWidget()
 
@@ -260,11 +207,11 @@ class MainWindow(QMainWindow):
             enabled=True,
         )
         imageDirectory = action(
-            self.tr("Video Directory"),
+            self.tr("Image Directory"),
             lambda: self.clickFileChoose(),
             'None',
             "objects",
-            self.tr("Video Directory"),
+            self.tr("Image Directory"),
             enabled=True,
         )
         LoadSAM = action(
@@ -273,14 +220,6 @@ class MainWindow(QMainWindow):
             'None',
             "objects",
             self.tr("Load SAM"),
-            enabled=True,
-        )
-        LoadSTCN = action(
-            self.tr("Load STCN"),
-            lambda: self.clickLoadSTCN(),
-            'None',
-            "objects",
-            self.tr("Load STCN"),
             enabled=True,
         )
         AutoSeg = action(
@@ -292,11 +231,11 @@ class MainWindow(QMainWindow):
             enabled=False,
         )
         promptSeg = action(
-            self.tr("(A)ccept"),
+            self.tr("Accept"),
             lambda: self.addSamMask(),
             'a',
             "objects",
-            self.tr("(A)ccept"),
+            self.tr("Accept"),
             enabled=False,
         )
 
@@ -334,11 +273,11 @@ class MainWindow(QMainWindow):
             enabled=True,
         )
         cleanPrompt = action(
-            self.tr("(R)eject"),
+            self.tr("Reject"),
             lambda: self.cleanPrompt(),
             'r',
             "objects",
-            self.tr("(R)eject"),
+            self.tr("Reject"),
             enabled=True,
         )
         
@@ -352,9 +291,9 @@ class MainWindow(QMainWindow):
         )
 
         editMode = action(
-            self.tr("(E)dit Polygons"),
+            self.tr("Edit Polygons"),
             self.setEditMode,
-            'e',
+            'None',
             "edit",
             self.tr("Move and edit the selected polygons"),
             enabled=False,
@@ -368,6 +307,14 @@ class MainWindow(QMainWindow):
             enabled=True,
         )
 
+        undoLastPoint = action(
+            self.tr("Undo last point"),
+            self.canvas.undoLastPoint,
+            'U',
+            "undo",
+            self.tr("Undo last drawn point"),
+            enabled=False,
+        )
 
         hideAll = action(
             self.tr("&Hide\nPolygons"),
@@ -384,9 +331,17 @@ class MainWindow(QMainWindow):
             enabled=False,
         )
 
+        undo = action(
+            self.tr("Undo"),
+            self.undoShapeEdit,
+            'Ctrl+U',
+            "undo",
+            self.tr("Undo last add and edit of shape"),
+            enabled=False,
+        )
 
         save = action(
-            self.tr("&(S)ave"),
+            self.tr("&Save"),
             self.saveFile,
             'S',
             "save",
@@ -395,11 +350,19 @@ class MainWindow(QMainWindow):
         )
 
         delete = action(
-            self.tr("(D)elete Polygons"),
+            self.tr("Delete Polygons"),
             self.deleteSelectedShape,
             'd',
             "cancel",
             self.tr("Delete the selected polygons"),
+            enabled=False,
+        )
+        duplicate = action(
+            self.tr("Duplicate Polygons"),
+            self.duplicateSelectedShape,
+            'None',
+            "copy",
+            self.tr("Create a duplicate of the selected polygons"),
             enabled=False,
         )
         reduce_point = action(
@@ -409,15 +372,22 @@ class MainWindow(QMainWindow):
             "copy",
             self.tr("Reduce Points"),
             enabled=True,
+        )            
+        edit = action(
+            self.tr("&Edit Label"),
+            self.editLabel,
+            'None',
+            "edit",
+            self.tr("Modify the label of the selected polygon"),
+            enabled=False,
         )
-
+        
 
         self.actions = utils.struct(
             categoryFile=categoryFile,
             imageDirectory=imageDirectory,
             saveDirectory=saveDirectory,
             switchClass=self.switchClass,
-            loadSTCN=LoadSTCN,
             loadSAM=LoadSAM,
             #autoSeg=AutoSeg,
             promptSeg=promptSeg,
@@ -426,13 +396,19 @@ class MainWindow(QMainWindow):
             createPointMode=createPointMode,
             createRectangleMode=createRectangleMode,
             editMode=editMode,
+            undoLastPoint=undoLastPoint,
+            undo=undo,
             delete=delete,
+            edit=edit,
+            duplicate=duplicate,
             reduce_point=reduce_point,
             save=save,
             onShapesPresent=(saveAs, hideAll, showAll),
             menu=(
                 createMode,
                 editMode,
+                undoLastPoint,
+                undo,
                 save,
             )
             )
@@ -452,7 +428,6 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(imageDirectory)
         self.toolbar.addAction(saveDirectory)
         self.toolbar.addAction(self.switchClass)
-        self.toolbar.addAction(LoadSTCN)
         self.toolbar.addAction(LoadSAM)
         #self.toolbar.addAction(AutoSeg)
         self.toolbar.addAction(promptSeg)
@@ -461,7 +436,11 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(createPointMode)
         self.toolbar.addAction(createRectangleMode)
         self.toolbar.addAction(editMode)
+        self.toolbar.addAction(undoLastPoint)
+        self.toolbar.addAction(undo)
         self.toolbar.addAction(delete)
+        self.toolbar.addAction(edit)
+        self.toolbar.addAction(duplicate)
         self.toolbar.addAction(reduce_point)
         self.toolbar.addAction(save)
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextOnly)
@@ -506,8 +485,6 @@ class MainWindow(QMainWindow):
         self._saveFile(self.current_output_filename)
 
     def _saveFile(self, filename):
-        video_name = os.path.basename(os.path.basename(self.current_video))
-        os.makedirs(os.path.join(self.current_output_dir, video_name), exist_ok=True)
         if filename and self.saveLabels(filename):
             self.setClean()
 
@@ -617,51 +594,16 @@ class MainWindow(QMainWindow):
         self.canvas.loadShapes([item.shape() for item in self.labelList])
 
     def clickButtonNext(self):
-        if self.actions.save.isEnabled():
-            self.saveFile()
         if self.current_img_index < self.img_len - 1:
             self.current_img_index += 1
             self.current_img = self.img_list[self.current_img_index]
             self.loadImg()
-            
 
     def clickButtonLast(self):
-        if self.actions.save.isEnabled():
-            self.saveFile()
         if self.current_img_index > 0:
             self.current_img_index -= 1
             self.current_img = self.img_list[self.current_img_index]
             self.loadImg()
-
-    def clickButtonNextVideo(self):
-        if self.actions.save.isEnabled():
-            self.saveFile()
-        if self.current_video_index < self.video_len - 1:
-            self.current_video_index += 1
-            self.current_video = self.video_list[self.current_video_index]
-            self.video_progress_bar.setValue(self.current_video_index)
-            self.img_list = glob.glob(os.path.join(self.current_video, '*.jpg')) + glob.glob(os.path.join(self.current_video, '*.png'))
-            self.img_list.sort()
-            self.img_len = len(self.img_list)
-            self.current_img_index = 0
-            self.current_img = self.img_list[self.current_img_index]
-            self.loadImg()
-            self.clickClearTrackMemory()
-
-    def clickButtonLastVideo(self):
-        if self.actions.save.isEnabled():
-            self.saveFile()
-        if self.current_video_index > 0:
-            self.current_video_index -= 1
-            self.current_video = self.video_list[self.current_video_index]
-            self.video_progress_bar.setValue(self.current_video_index)
-            self.img_list = glob.glob(os.path.join(self.current_video, '*.jpg')) + glob.glob(os.path.join(self.current_video, '*.png'))
-            self.img_list.sort()
-            self.img_len = len(self.img_list)
-            self.current_img_index = 0
-            self.current_img = self.img_list[self.current_img_index]
-            self.loadImg()
-            self.clickClearTrackMemory()
 
 
     def choose_proposal1(self):
@@ -693,18 +635,14 @@ class MainWindow(QMainWindow):
         pixmap = QPixmap(self.current_img)
         #pixmap = pixmap.scaled(int(0.75 * global_w), int(0.7 * global_h))
         self.canvas.loadPixmap(pixmap)
+        self.img_progress_bar.setValue(self.current_img_index)
 
         img_name = os.path.basename(self.current_img)[:-4]
-        video_name = os.path.basename(self.current_video)
-        self.current_output_filename = os.path.join(self.current_output_dir, video_name, img_name + '.json')
+        self.current_output_filename = osp.join(self.current_output_dir, img_name + '.json')
         self.labelList.clear()
         if os.path.isfile(self.current_output_filename):
             self.loadAnno(self.current_output_filename)
         self.image_encoded_flag = False
-        
-        self.img_progress_bar.setMinimum(0)
-        self.img_progress_bar.setMaximum(self.img_len-1)
-        self.img_progress_bar.setValue(self.current_img_index)
 
 
     def clickFileChoose(self):
@@ -712,22 +650,15 @@ class MainWindow(QMainWindow):
         if directory == '':
             return
         #self.img_list = glob.glob(directory + '/*.{jpg,png,JPG,PNG}')
-        self.video_list = glob.glob(directory + '/*')
-        self.video_list.sort()
-        self.video_len = len(self.video_list)
-        if self.video_len == 0:
-            return
-        self.video_progress_bar.setMinimum(0)
-        self.video_progress_bar.setMaximum(self.video_len-1)
-        self.current_video_index = 0
-        self.current_video = self.video_list[self.current_video_index]
-        self.img_list = glob.glob(self.video_list[0] + '/*.jpg') + glob.glob(self.video_list[0] + '/*.png')
+        self.img_list = glob.glob(directory + '/*.jpg') + glob.glob(directory + '/*.png')
         self.img_list.sort()
         self.img_len = len(self.img_list)
         if self.img_len == 0:
             return
         self.current_img_index = 0
         self.current_img = self.img_list[self.current_img_index]
+        self.img_progress_bar.setMinimum(0)
+        self.img_progress_bar.setMaximum(self.img_len-1)
         self.loadImg()
 
     def clickSaveChoose(self):
@@ -777,198 +708,7 @@ class MainWindow(QMainWindow):
         self.actions.loadSAM.setEnabled(False)
         #self.actions.autoSeg.setEnabled(True)
         self.actions.promptSeg.setEnabled(True)
-
-    def clickLoadSTCN(self):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.prop_model = STCN().to(device=self.device).eval()
-        # Performs input mapping such that stage 0 model can be loaded
-        prop_saved = torch.load('stcn.pth',map_location=torch.device(self.device))
-        for k in list(prop_saved.keys()):
-            if k == 'value_encoder.conv1.weight':
-                if prop_saved[k].shape[1] == 4:
-                    pads = torch.zeros((64,1,7,7), device=self.device)
-                    prop_saved[k] = torch.cat([prop_saved[k], pads], 1)
-        self.prop_model.load_state_dict(prop_saved)
-
-        self.im_transform = transforms.Compose([
-            transforms.ToTensor(),
-            im_normalization,
-        ])
-        self.actions.loadSTCN.setEnabled(False)
-
-    def clickAddMemory(self):
-        if self.prop_model == None:
-            return
-        def format_shape(s):
-            data = s.other_data.copy()
-            data.update(
-                dict(
-                    label=s.label.encode("utf-8") if PY2 else s.label,
-                    points=[(p.x(), p.y()) for p in s.points],
-                    group_id=s.group_id,
-                    shape_type=s.shape_type,
-                    flags=s.flags,
-                )
-            )
-            return data
-        if len(self.img_list) != 0 and len(self.canvas.selectedShapes) > 0:
-            rgb = torch.stack([self.im_transform(Image.open(tmp_img).convert('RGB')) for tmp_img in self.img_list],0)
-            self.raw_h,self.raw_w = rgb.shape[-2:]
-            scale_ratio = self.max_size_STCN / max(self.raw_h, self.raw_w)
-            self.scaled_h, self.scaled_w = int(self.raw_h * scale_ratio), int(self.raw_w * scale_ratio)
-            
-            rgb = F.interpolate(rgb, size=(self.scaled_h, self.scaled_w), mode='bilinear').unsqueeze(0)
-            self.memory_shapes = [format_shape(item) for item in self.canvas.selectedShapes]
-            used_mask_dic = {}
-            for shape in self.memory_shapes:
-                mask = torch.Tensor(self.polygon2mask(shape['points'],(self.raw_h,self.raw_w)))
-                if shape['group_id'] in used_mask_dic.keys():
-                    used_mask_dic[shape['group_id']]['mask'] = used_mask_dic[shape['group_id']]['mask'] + mask
-                    used_mask_dic[shape['group_id']]['mask'][used_mask_dic[shape['group_id']]['mask'] > 1] = 0
-                else:
-                    used_mask_dic[shape['group_id']] = {}
-                    used_mask_dic[shape['group_id']]['mask'] = mask
-                    used_mask_dic[shape['group_id']]['label'] = shape['label']
-            
-            self.processor = InferenceCore(self.prop_model, rgb.to(device=self.device), len(used_mask_dic.keys()), top_k=20,
-                mem_every=1000, include_last=True, device=self.device)
-            self.tracked_object_text.setText('Tracked_object:{}'.format(list(used_mask_dic.keys())))
-            mask = torch.stack([v['mask'] for _, v in used_mask_dic.items()],0).unsqueeze(1)
-            mask = F.interpolate(mask, size=(self.scaled_h, self.scaled_w), mode='nearest')
-            self.tracked_id_list = [k for k, _ in used_mask_dic.items()]
-            self.tracked_label_list = [v['label'] for _, v in used_mask_dic.items()]
-            self.addmemory(mask, self.current_img_index)
-            #self.canvas.selectedShapes = []
-            
-
-
-    def addmemory(self, mask, frame_idx, is_temp=False):
-        with torch.no_grad():
-            mask, _ = pad_divide_by(mask, 16)
-            #self.prob[:, frame_idx] = aggregate(mask, keep_bg=True)
-
-            # KV pair for the interacting frame
-            key_k, _, qf16, _, _ = self.processor.encode_key(frame_idx)
-            key_v = self.processor.prop_net.encode_value(self.processor.images[:,frame_idx], qf16, mask.to(device=self.device))
-            key_k = key_k.unsqueeze(2)
-            self.processor.mem_bank.add_memory(key_k, key_v, is_temp)
-
-
-    def clickAddKeyFrame(self):
-        if self.processor == None or len(self.tracked_id_list) == 0:
-            return
-            
-        def format_shape(s):
-            data = s.other_data.copy()
-            data.update(
-                dict(
-                    label=s.label.encode("utf-8") if PY2 else s.label,
-                    points=[(p.x(), p.y()) for p in s.points],
-                    group_id=s.group_id,
-                    shape_type=s.shape_type,
-                    flags=s.flags,
-                )
-            )
-            return data
-            
-        self.memory_shapes = [format_shape(item.shape()) for item in self.labelList]
-        used_mask_dic = {}
-        for shape in self.memory_shapes:
-            if shape['group_id'] not in self.tracked_id_list:
-                continue
-            mask = torch.Tensor(self.polygon2mask(shape['points'],(self.raw_h,self.raw_w)))
-            if shape['group_id'] in used_mask_dic.keys():
-                used_mask_dic[shape['group_id']]['mask'] = used_mask_dic[shape['group_id']]['mask'] + mask
-                used_mask_dic[shape['group_id']]['mask'][used_mask_dic[shape['group_id']]['mask'] > 1] = 0
-            else:
-                used_mask_dic[shape['group_id']] = {}
-                used_mask_dic[shape['group_id']]['mask'] = mask
-                used_mask_dic[shape['group_id']]['label'] = shape['label']
-        if len(used_mask_dic) != len(self.tracked_id_list):
-            return
-        
-        mask = torch.stack([used_mask_dic[tid]['mask'] for tid in self.tracked_id_list],0).unsqueeze(1)
-        mask = F.interpolate(mask, size=(self.scaled_h, self.scaled_w), mode='nearest')
-        self.addmemory(mask, self.current_img_index)
-
-        self.processor.mem_bank.temp_k = None
-        self.processor.mem_bank.temp_v = None
-
-    def clickPropagate(self):
-        if self.processor == None or len(self.tracked_id_list) == 0:
-            return
-        with torch.no_grad():
-            k16, qv16, qf16, qf8, qf4 = self.processor.encode_key(self.current_img_index)
-            out_mask = self.processor.prop_net.segment_with_query(self.processor.mem_bank, qf8, qf4, k16, qv16)
-
-            prev_value = self.processor.prop_net.encode_value(self.processor.images[:,self.current_img_index], qf16, out_mask)
-            prev_key = k16.unsqueeze(2)
-            #self.processor.mem_bank.add_memory(prev_key, prev_value,is_temp=True)
-            self.processor.mem_bank.temp_k = prev_key.flatten(start_dim=2)
-            self.processor.mem_bank.temp_v = prev_value.flatten(start_dim=2)
-            prob = unpad(out_mask, self.processor.pad)
-            prob = (prob > 0.5).cpu().numpy()[:,0].astype(np.uint8)
-            out_masks = []
-            for i in range(prob.shape[0]):
-                out_masks.append(prob[i])
-            del prob, k16, qv16, qf16, qf8, qf4, prev_value, prev_key
-            torch.cuda.empty_cache()
-
-
-
-        updated_id_list = []
-        cur_shape = [item.shape() for item in self.labelList]
-        add_shape = []
-        vaild_contours_index = []
-        for i in range(len(out_masks)):
-            out_mask = out_masks[i]
-            if out_mask.sum() == 0:
-                continue
-            out_mask = cv2.resize(out_mask, (self.raw_w, self.raw_h), interpolation=cv2.INTER_NEAREST)
-            
-            points_list = cv2.findContours(out_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]
-            area_list = []
-            for idx in range(len(points_list)):
-                area = cv2.contourArea(points_list[idx])
-                area_list.append(area)
-            max_idx = np.argmax(np.array(area_list))
-            #for points in points_list[max_idx:max_idx+1]:
-            for iii, points in enumerate(points_list):
-                if cv2.contourArea(points) < 100 and iii != max_idx:
-                    continue
-                pointsx = points[:,0,0]
-                pointsy = points[:,0,1]
-
-                label = self.tracked_label_list[i]
-                shape_type = 'polygon'
-                group_id = int(self.tracked_id_list[i])
-                updated_id_list.append(group_id)
-                shape = Shape(
-                    label=label,
-                    shape_type=shape_type,
-                    group_id=group_id,
-                )
-                for point_index in range(pointsx.shape[0]):
-                    shape.addPoint(QtCore.QPointF(pointsx[point_index], pointsy[point_index]))
-                shape.close()
-                add_shape.append(shape)
-
-        add_shape_raw = [i for i in cur_shape if int(i.group_id) not in updated_id_list]
-        self.labelList.clear()
-        for shape in add_shape_raw + add_shape:
-            self.addLabel(shape)
-
-        self.canvas.loadShapes([item.shape() for item in self.labelList])
-        self.actions.save.setEnabled(True)
-
-    def clickClearTrackMemory(self):
-        del self.processor, self.tracked_id_list, self.tracked_label_list
-        self.processor = None
-        self.tracked_id_list = None
-        self.tracked_label_list = None
-        self.tracked_object_text.setText("Tracked_object:")
-        
-
+    
     def clickAutoSeg(self):
         pass
     
@@ -1257,6 +997,8 @@ class MainWindow(QMainWindow):
             shape.group_id = group_id
             self.addLabel(shape)
             self.actions.editMode.setEnabled(True)
+            self.actions.undoLastPoint.setEnabled(False)
+            self.actions.undo.setEnabled(True)
             self.setDirty()
         else:
             self.canvas.undoLastLine()
@@ -1264,6 +1006,7 @@ class MainWindow(QMainWindow):
 
     def setDirty(self):
         # Even if we autosave the file, we keep the ability to undo
+        self.actions.undo.setEnabled(self.canvas.isShapeRestorable)
 
         # if self._config["auto_save"] or self.actions.saveAuto.isChecked():
         #     label_file = osp.splitext(self.imagePath)[0] + ".json"
@@ -1294,6 +1037,8 @@ class MainWindow(QMainWindow):
         self._noSelectionSlot = False
         n_selected = len(selected_shapes)
         self.actions.delete.setEnabled(n_selected)
+        self.actions.duplicate.setEnabled(n_selected)
+        self.actions.edit.setEnabled(n_selected == 1)
 
     def toggleDrawingSensitive(self, drawing=True):
         """Toggle drawing sensitive.
@@ -1492,6 +1237,7 @@ class MainWindow(QMainWindow):
         self.canvas.restoreShape()
         self.labelList.clear()
         self.loadShapes(self.canvas.shapes)
+        self.actions.undo.setEnabled(self.canvas.isShapeRestorable)
 
     def loadShapes(self, shapes, replace=True):
         self._noSelectionSlot = True
@@ -1513,6 +1259,14 @@ class MainWindow(QMainWindow):
         self.labelList.clearSelection()
         self.setDirty()
     def deleteSelectedShape(self):
+        #yes, no = QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No
+        #msg = self.tr(
+        #    "You are about to permanently delete {} polygons, "
+        #    "proceed anyway?"
+        #).format(len(self.canvas.selectedShapes))
+        #if yes == QtWidgets.QMessageBox.warning(
+        #    self, self.tr("Attention"), msg, yes | no, yes
+        #):
         self.remLabels(self.canvas.deleteSelected())
         self.setDirty()
         if self.noShapes():
@@ -1640,11 +1394,7 @@ def get_parser():
     parser.add_argument(
         "--max_size",
         default=720,
-    )
-    parser.add_argument(
-        "--max_size_STCN",
-        default=600,
-    )
+    )   
     return parser
 
 if __name__ == '__main__':
@@ -1653,8 +1403,7 @@ if __name__ == '__main__':
     model_type = parser.parse_args().model_type
     keep_input_size = parser.parse_args().keep_input_size
     max_size = parser.parse_args().max_size
-    max_size_STCN = parser.parse_args().max_size_STCN
     app = QApplication(sys.argv)
-    main = MainWindow(global_h=global_h, global_w=global_w, model_type=model_type, keep_input_size=keep_input_size, max_size=max_size, max_size_STCN=max_size_STCN)
+    main = MainWindow(global_h=global_h, global_w=global_w, model_type=model_type, keep_input_size=keep_input_size, max_size=max_size)
     main.show()
     sys.exit(app.exec_())
