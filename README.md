@@ -16,7 +16,6 @@ Any feedback or suggestions are welcomed. We will continuously add features and 
 - [x] Polygon modification
 - [ ] CLIP for Category Proposal
 - [x] STCN for Video Dataset Annotation
-- [ ] Annotation convert scripts: -> Labelme/COCO/Youtube-VIS
 
 ## Demo
 <img src="demo.gif" alt="Demo" width="720" height="480">
