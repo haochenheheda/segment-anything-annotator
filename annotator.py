@@ -594,12 +594,16 @@ class MainWindow(QMainWindow):
         self.canvas.loadShapes([item.shape() for item in self.labelList])
 
     def clickButtonNext(self):
+        if self.actions.save.isEnabled():
+            self.saveFile()
         if self.current_img_index < self.img_len - 1:
             self.current_img_index += 1
             self.current_img = self.img_list[self.current_img_index]
             self.loadImg()
 
     def clickButtonLast(self):
+        if self.actions.save.isEnabled():
+            self.saveFile()
         if self.current_img_index > 0:
             self.current_img_index -= 1
             self.current_img = self.img_list[self.current_img_index]
