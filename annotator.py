@@ -12,6 +12,7 @@ import argparse
 import numpy as np
 import tempfile
 import torch
+import base64
 
 from PyQt5.QtWidgets import QWidget, QApplication, QMainWindow, QApplication, QPushButton, QLabel, QFileDialog, QProgressBar, QComboBox, QScrollArea, QDockWidget, QMessageBox
 from PyQt5.QtGui import QPixmap, QIcon, QImage
@@ -141,6 +142,7 @@ class MainWindow(QMainWindow):
         self.img_len = len(self.img_list)
         self.current_img_index = 0
         self.current_img = ''
+        self.current_img_data = ''
 
         self.button_next = QPushButton('Next Image', self)
         self.button_next.clicked.connect(self.clickButtonNext)
@@ -506,12 +508,13 @@ class MainWindow(QMainWindow):
             return data
 
         shapes = [format_shape(item.shape()) for item in self.labelList]
+        imageData = base64.b64encode(self.current_img_data).decode("utf-8")
         save_data = {
             "version": "1.0.0",
             "flags": {},
             "shapes": shapes,
             "imagePath": self.current_img,
-            "imageData": "",
+            "imageData": imageData,
             "imageHeight": self.raw_h,
             "imageWidth": self.raw_w
         }
@@ -647,6 +650,7 @@ class MainWindow(QMainWindow):
         if os.path.isfile(self.current_output_filename):
             self.loadAnno(self.current_output_filename)
         self.image_encoded_flag = False
+        self.current_img_data = LabelFile.load_image_file(self.current_img)
 
 
     def clickFileChoose(self):
