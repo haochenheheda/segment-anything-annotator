@@ -39,24 +39,34 @@ Click = namedtuple('Click', ['is_positive', 'coords'])
 
 from segment_anything import sam_model_registry, SamPredictor
 
-
-
-
-
 LABEL_COLORMAP = imgviz.label_colormap()
 
 class MainWindow(QMainWindow):
+    """메인 윈도우 클래스"""
 
+    # 윈도우 크기 조절을 위한 상수들
     FIT_WINDOW, FIT_WIDTH, MANUAL_ZOOM = 0, 1, 2
 
     def __init__(self, parent=None, global_w=1000, global_h=1800, model_type='vit_b', keep_input_size=True, max_size=1080):
+        """
+        메인 윈도우 초기화
+        Args:
+            global_w: 윈도우 너비
+            global_h: 윈도우 높이 
+            model_type: SAM 모델 타입
+            keep_input_size: 입력 이미지 크기 유지 여부
+            max_size: 최대 이미지 크기
+        """
         super(MainWindow, self).__init__(parent)
         self.resize(global_w, global_h)
         self.model_type = model_type
         self.keep_input_size = keep_input_size
         self.max_size = float(max_size)
 
+        # 윈도우 제목 설정
         self.setWindowTitle('segment-anything-annotator')
+        
+        # 캔버스 초기화 - 이미지를 표시하고 annotation을 그리는 영역
         self.canvas = Canvas(self,
             epsilon=10.0,
             double_click='close',
@@ -64,13 +74,14 @@ class MainWindow(QMainWindow):
             app=self,
         )
 
-        
+        # 선택 관련 플래그와 출력 디렉토리 설정
         self._noSelectionSlot = False
         self.current_output_dir = 'output'
         os.makedirs(self.current_output_dir, exist_ok=True)
         self.current_output_filename = ''
         self.canvas.zoomRequest.connect(self.zoomRequest)
 
+        # 메모리에 저장된 도형들과 SAM 마스크 관련 변수들
         self.memory_shapes = []
         self.sam_mask = []
         self.sam_mask_proposal = []
@@ -79,6 +90,7 @@ class MainWindow(QMainWindow):
 
         self.predictor = None
 
+        # 스크롤 영역 설정
         self.scroll_values = {
             Qt.Horizontal: {},
             Qt.Vertical: {},
@@ -124,6 +136,7 @@ class MainWindow(QMainWindow):
         self.shape_dock.setObjectName("Labels")
         self.shape_dock.setWidget(self.labelList)
 
+        # 자동 카테고리 리스트 업데이트 
         self.category_list = [i.strip() for i in open('categories.txt', 'r', encoding='utf-8').readlines()]
         self.labelDialog = LabelDialog(
             parent=self,
@@ -133,6 +146,7 @@ class MainWindow(QMainWindow):
             completion='contains',
             fit_to_content={'column': True, 'row': False},
         )
+
         self.zoom_values = {}
         self.video_directory = ''
         self.video_list = []
@@ -146,8 +160,10 @@ class MainWindow(QMainWindow):
 
         self.button_next = QPushButton('Next Image', self)
         self.button_next.clicked.connect(self.clickButtonNext)
+        self.button_next.setShortcut('.')
         self.button_last = QPushButton('Last Image', self)
         self.button_last.clicked.connect(self.clickButtonLast)
+        self.button_last.setShortcut(',')
 
         self.img_progress_bar = QProgressBar(self)
         self.img_progress_bar.setMinimum(0)
@@ -193,8 +209,7 @@ class MainWindow(QMainWindow):
         self.button_proposal4.resize(int(0.17 * global_w),int(0.14 * global_h))
         self.button_proposal4.move(int(0.84 * global_w), int(0.8 * global_h))
         
-        
-        
+    
         self.zoomWidget = ZoomWidget()
 
         action = functools.partial(utils.newAction, self)
@@ -203,7 +218,7 @@ class MainWindow(QMainWindow):
         categoryFile = action(
             self.tr("Category File"),
             lambda: self.clickCategoryChoose(),
-            'None',
+            'F1',
             "objects",
             self.tr("Category File"),
             enabled=True,
@@ -211,27 +226,35 @@ class MainWindow(QMainWindow):
         imageDirectory = action(
             self.tr("Image Directory"),
             lambda: self.clickFileChoose(),
-            'None',
+            'F2',
             "objects",
             self.tr("Image Directory"),
+            enabled=True,
+        )
+        saveDirectory = action(
+            self.tr("Save Directory"),
+            lambda: self.clickSaveChoose(),
+            'F3',
+            "objects",
+            self.tr("Save Directory"),
             enabled=True,
         )
         LoadSAM = action(
             self.tr("Load SAM"),
             lambda: self.clickLoadSAM(),
-            'None',
+            'F4',
             "objects",
             self.tr("Load SAM"),
             enabled=True,
         )
-        AutoSeg = action(
-            self.tr("AutoSeg"),
-            lambda: self.clickAutoSeg(),
-            'None',
-            "objects",
-            self.tr("AutoSeg"),
-            enabled=False,
-        )
+        # AutoSeg = action(
+        #     self.tr("AutoSeg"),
+        #     lambda: self.clickAutoSeg(),
+        #     'None',
+        #     "objects",
+        #     self.tr("AutoSeg"),
+        #     enabled=False,
+        # )
         promptSeg = action(
             self.tr("Accept"),
             lambda: self.addSamMask(),
@@ -240,16 +263,6 @@ class MainWindow(QMainWindow):
             self.tr("Accept"),
             enabled=False,
         )
-
-        saveDirectory = action(
-            self.tr("Save Directory"),
-            lambda: self.clickSaveChoose(),
-            'None',
-            "objects",
-            self.tr("Save Directory"),
-            enabled=True,
-        )
-
         createMode = action(
             self.tr("Manual Polygons"),
             lambda: self.toggleDrawMode(False, createMode="polygon"),
@@ -261,7 +274,7 @@ class MainWindow(QMainWindow):
         createPointMode = action(
             self.tr("Point Prompt"),
             lambda: self.toggleDrawMode(False, createMode="point"),
-            'None',
+            'p',
             "objects",
             self.tr("Point Prompt"),
             enabled=True,
@@ -269,7 +282,7 @@ class MainWindow(QMainWindow):
         createRectangleMode = action(
             self.tr("Box Prompt"),
             lambda: self.toggleDrawMode(False, createMode="rectangle"),
-            'None',
+            'b',
             "objects",
             self.tr("Box Prompt"),
             enabled=True,
@@ -295,7 +308,7 @@ class MainWindow(QMainWindow):
         editMode = action(
             self.tr("Edit Polygons"),
             self.setEditMode,
-            'None',
+            'e',
             "edit",
             self.tr("Move and edit the selected polygons"),
             enabled=False,
@@ -336,7 +349,7 @@ class MainWindow(QMainWindow):
         undo = action(
             self.tr("Undo"),
             self.undoShapeEdit,
-            'Ctrl+U',
+            'Ctrl+Z',
             "undo",
             self.tr("Undo last add and edit of shape"),
             enabled=False,
@@ -354,7 +367,7 @@ class MainWindow(QMainWindow):
         delete = action(
             self.tr("Delete Polygons"),
             self.deleteSelectedShape,
-            'd',
+            'Del',
             "cancel",
             self.tr("Delete the selected polygons"),
             enabled=False,
@@ -398,7 +411,7 @@ class MainWindow(QMainWindow):
             createPointMode=createPointMode,
             createRectangleMode=createRectangleMode,
             editMode=editMode,
-            undoLastPoint=undoLastPoint,
+            # undoLastPoint=undoLastPoint,
             undo=undo,
             delete=delete,
             edit=edit,
@@ -438,7 +451,7 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(createPointMode)
         self.toolbar.addAction(createRectangleMode)
         self.toolbar.addAction(editMode)
-        self.toolbar.addAction(undoLastPoint)
+        # self.toolbar.addAction(undoLastPoint)
         self.toolbar.addAction(undo)
         self.toolbar.addAction(delete)
         self.toolbar.addAction(edit)
@@ -456,34 +469,18 @@ class MainWindow(QMainWindow):
                     "{} from the canvas."
                 )
             ).format(
-                #utils.fmtShortcut(
-                #    "{},{}".format(shortcuts["zoom_in"], shortcuts["zoom_out"])
-                #),
                 utils.fmtShortcut(self.tr("Ctrl+Wheel")),
             )
         )
         self.zoomWidget.setEnabled(True)
-
         self.zoomWidget.valueChanged.connect(self.paintCanvas)
         self.canvas.actions = self.actions
-
 
     def saveFileAs(self, _value=False):
         assert not self.image.isNull(), "cannot save empty image"
         self._saveFile(self.saveFileDialog())
 
     def saveFile(self, _value=False):
-        # assert not self.image.isNull(), "cannot save empty image"
-        # if self.labelFile:
-        #     # DL20180323 - overwrite when in directory
-        #     self._saveFile(self.labelFile.filename)
-        # elif self.output_file:
-        #     self._saveFile(self.output_file)
-        #     self.close()
-        # else:
-        #     self._saveFile(self.saveFileDialog())
-        #self._saveFile(self.saveFileDialog())
-        #print(self.current_output_filename)
         self._saveFile(self.current_output_filename)
 
     def _saveFile(self, filename):
@@ -709,12 +706,20 @@ class MainWindow(QMainWindow):
 
     def clickLoadSAM(self):
         download_model(self.model_type)
-        self.sam = sam_model_registry[self.model_type](checkpoint='{}.pth'.format(self.model_type))
+        tuned_model_name, _ = QFileDialog.getOpenFileName(self, 'choose target file','.')
+        if tuned_model_name == '':
+            return
+        try: 
+            tuned_model_name.split('.')[-1] == 'pth'
+        except:
+            print('please choose a .pth file!')
+            return
+        self.sam = sam_model_registry[self.model_type](checkpoint='{}'.format(tuned_model_name))  # build_sam_vit_h
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.sam.to(device=self.device)
+        print('load sam model success!')
         self.predictor = SamPredictor(self.sam)
         self.actions.loadSAM.setEnabled(False)
-        #self.actions.autoSeg.setEnabled(True)
         self.actions.promptSeg.setEnabled(True)
     
     def clickAutoSeg(self):
