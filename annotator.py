@@ -108,6 +108,7 @@ class MainWindow(QMainWindow):
         self.canvas.selectionChanged.connect(self.shapeSelectionChanged)
         self.canvas.drawingPolygon.connect(self.toggleDrawingSensitive)
 
+        # 고유한 라벨 리스트 초기화
         self.uniqLabelList = UniqueLabelQListWidget()
         self.uniqLabelList.setToolTip(
             self.tr(
@@ -115,6 +116,8 @@ class MainWindow(QMainWindow):
                 "Press 'Esc' to deselect."
             )
         )
+
+        # 라벨을 저장하는 다이얼로그
         self.labelDialog = LabelDialog(
             parent=self,
             labels=[],
@@ -321,7 +324,6 @@ class MainWindow(QMainWindow):
             self.tr("Save labels to a different file"),
             enabled=True,
         )
-
         undoLastPoint = action(
             self.tr("Undo last point"),
             self.canvas.undoLastPoint,
@@ -330,6 +332,7 @@ class MainWindow(QMainWindow):
             self.tr("Undo last drawn point"),
             enabled=False,
         )
+
 
         hideAll = action(
             self.tr("&Hide\nPolygons"),
@@ -383,11 +386,19 @@ class MainWindow(QMainWindow):
         reduce_point = action(
             self.tr("Reduce Points"),
             self.reducePoint,
-            'None',
+            'c',
             "copy",
             self.tr("Reduce Points"),
             enabled=True,
-        )            
+        )
+        union_point = action(
+            self.tr("Union Points"),
+            self.unionPoint,
+            'U',
+            "copy",
+            self.tr("Union Points"),
+            enabled=True,
+        )               
         edit = action(
             self.tr("&Edit Label"),
             self.editLabel,
@@ -396,6 +407,14 @@ class MainWindow(QMainWindow):
             self.tr("Modify the label of the selected polygon"),
             enabled=False,
         )
+        subtract_area = action(
+            self.tr("Subtract Area"),
+            self.subtractArea,
+            '-',
+            "subtract",
+            self.tr("Subtract Area"),
+            enabled=True,
+        )       
         
 
         self.actions = utils.struct(
@@ -404,14 +423,13 @@ class MainWindow(QMainWindow):
             saveDirectory=saveDirectory,
             switchClass=self.switchClass,
             loadSAM=LoadSAM,
-            #autoSeg=AutoSeg,
             promptSeg=promptSeg,
             cleanPrompt=cleanPrompt,
             createMode=createMode,
             createPointMode=createPointMode,
             createRectangleMode=createRectangleMode,
             editMode=editMode,
-            # undoLastPoint=undoLastPoint,
+            undoLastPoint=undoLastPoint,
             undo=undo,
             delete=delete,
             edit=edit,
@@ -422,7 +440,7 @@ class MainWindow(QMainWindow):
             menu=(
                 createMode,
                 editMode,
-                undoLastPoint,
+                # 
                 undo,
                 save,
             )
@@ -451,12 +469,14 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(createPointMode)
         self.toolbar.addAction(createRectangleMode)
         self.toolbar.addAction(editMode)
-        # self.toolbar.addAction(undoLastPoint)
+        self.toolbar.addAction(undoLastPoint)
         self.toolbar.addAction(undo)
         self.toolbar.addAction(delete)
         self.toolbar.addAction(edit)
         self.toolbar.addAction(duplicate)
         self.toolbar.addAction(reduce_point)
+        self.toolbar.addAction(union_point)
+        self.toolbar.addAction(subtract_area)
         self.toolbar.addAction(save)
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextOnly)
 
@@ -1344,7 +1364,193 @@ class MainWindow(QMainWindow):
                 min_dis = min(min_dis, d)
                 points_new.append(points[i])
         return min_dis
+    
+    def unionPoint(self):
 
+        def format_shape(s):
+            data = s.other_data.copy()
+            data.update(
+                dict(
+                    label=s.label.encode("utf-8") if PY2 else s.label,
+                    points=[(p.x(), p.y()) for p in s.points],
+                    group_id=s.group_id,
+                    shape_type=s.shape_type,
+                    flags=s.flags,
+                )
+            )
+            return data
+        
+        shapes = self.current_img
+        shapes = [format_shape(item.shape()) for item in self.labelList.selectedItems()]
+
+        if len(shapes) != 2:
+            print('Union Point는 2개의 Polygon을 선택해야 합니다.')
+            self.canvas.loadShapes([item.shape() for item in self.labelList])
+            self.actions.save.setEnabled(True)
+            return
+
+        # 0. 오른쪽 Polygon Labels 아이템 제거를 한다. 
+        rm_shapes = [item.shape() for item in self.labelList.selectedItems()]
+        self.remLabels(rm_shapes)
+
+        # 1. 포인트 2개 합치기 
+        shape1, shape2 = shapes
+        points1 = shape1['points']
+        points2 = shape2['points']
+        
+        # mask 2 개를 만든다. 
+        mask1 = self.polygon2mask(points1, (self.raw_h, self.raw_w))
+        mask2 = self.polygon2mask(points2, (self.raw_h, self.raw_w))
+
+        def is_overlap_masks(mask1, mask2):
+            mask = np.logical_and(mask1.astype(np.bool_), mask2.astype(np.bool_))
+            sum = mask.sum()
+            if sum > 0:
+                return True
+            else:   
+                return False
+
+        # 겹치는 부분이 1이라도 존재하면 
+        if is_overlap_masks(mask1, mask2):
+            union_mask = np.logical_or(mask1.astype(np.bool_), mask2.astype(np.bool_)).astype(np.uint8)
+            points_new = self.mask2polygon(union_mask)
+
+            shapes[0]['points'] = points_new
+            shape = shapes[0]
+            shape['points'] = points_new
+
+            # 2. 그룹, 라벨 합치기
+            tmp_shape = shapes[0]
+            shape = Shape(
+                label=tmp_shape['label'],
+                shape_type=tmp_shape['shape_type'],
+                group_id=tmp_shape['group_id'],
+            )
+            for point_index in range(len(tmp_shape['points'])):
+                shape.addPoint(QtCore.QPointF(tmp_shape['points'][point_index][0][0], tmp_shape['points'][point_index][0][1]))
+            shape.close()
+
+            # 3. 오른쪽 Polygon Labels 아이템 추가를 한다.  
+            self.addLabel(shape)
+            tmp_item = self.labelList.findItemByShape(shape)
+            self.labelList.selectItem(tmp_item)
+            self.labelList.scrollToItem(tmp_item)
+        else:
+            tmp_shape_ = shapes[0]
+            label = tmp_shape_['label']
+            shape_type = tmp_shape_['shape_type']
+            group_id = tmp_shape_['group_id']
+
+            for tmp_shape in shapes:
+                shape = Shape(
+                    label=label,
+                    shape_type=shape_type,
+                    group_id=group_id,
+                )
+                for point_index in range(len(tmp_shape['points'])):
+                    shape.addPoint(QtCore.QPointF(tmp_shape['points'][point_index][0], tmp_shape['points'][point_index][1]))
+                shape.close()
+                # 3. 오른쪽 Polygon Labels 아이템 추가를 한다.  
+                self.addLabel(shape)
+                tmp_item = self.labelList.findItemByShape(shape)
+                self.labelList.selectItem(tmp_item)
+                self.labelList.scrollToItem(tmp_item)
+
+        # 4. 캔버스에 Polygon 추가를 한다. 
+        self.canvas.loadShapes([item.shape() for item in self.labelList])
+        self.actions.save.setEnabled(True)
+
+    def subtractArea(self):
+        
+        # shape 확인 
+        def format_shape(s):
+            data = s.other_data.copy()
+            data.update(
+                dict(
+                    label=s.label.encode("utf-8") if PY2 else s.label,
+                    points=[(p.x(), p.y()) for p in s.points],
+                    group_id=s.group_id,
+                    shape_type=s.shape_type,
+                    flags=s.flags,
+                )
+            )
+            return data
+        
+        shapes = self.current_img
+        shapes = [format_shape(item.shape()) for item in self.labelList.selectedItems()]
+
+        if len(shapes) != 2:
+            print('subtractArea는 2개의 Polygon을 선택해야 합니다.')
+            self.canvas.loadShapes([item.shape() for item in self.labelList])
+            self.actions.save.setEnabled(True)
+            return
+
+        # 1. 먼저 선택한 부분에서 나중에 선택한 부분을 뺀다. 
+        shape1, shape2 = shapes
+        points1 = shape1['points']
+        points2 = shape2['points']
+        
+        # mask 2 개를 만든다. numpy.ndarray, int8
+        mask1 = self.polygon2mask(points1, (self.raw_h, self.raw_w))  
+        mask2 = self.polygon2mask(points2, (self.raw_h, self.raw_w))
+
+        # 겹치는 부분 체크
+        def is_overlap_masks(mask1, mask2):
+            mask = np.logical_and(mask1.astype(np.bool_), mask2.astype(np.bool_))
+            sum = mask.sum()
+            if sum > 0:
+                return True
+            else:   
+                return False
+
+        # 겹치는 부분이 1이라도 존재하면 
+        if is_overlap_masks(mask1, mask2):
+
+            # 오른쪽 Polygon Labels 아이템 제거
+            rm_shapes = [item.shape() for item in self.labelList.selectedItems()]
+            self.remLabels(rm_shapes)
+
+            intersect_mask = np.logical_and(mask1.astype(np.bool_), mask2.astype(np.bool_)).astype(np.uint8)
+            contours, _ = cv2.findContours(mask1 - intersect_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+            # 이 부분이 몇개인지 확인해야 하는데
+            # contours 의 elemnt 의 크기가 1이 아니면 사용가능
+            points_new = []
+            for contour in contours:
+                if len(contour) > 1:
+                    points_new.append(np.array(contour))
+
+            num_masks = len(points_new)
+
+            for i in range(num_masks):
+                shapes[0]['points'] = points_new[i]
+                shape = shapes[0]
+                shape['points'] = points_new[i]
+
+                # 2. 그룹, 라벨 합치기
+                tmp_shape = shapes[0]
+                shape = Shape(
+                    label=tmp_shape['label'],
+                    shape_type=tmp_shape['shape_type'],
+                    group_id=tmp_shape['group_id'],
+                )
+                for point_index in range(len(tmp_shape['points'])):
+                    shape.addPoint(QtCore.QPointF(tmp_shape['points'][point_index][0][0], tmp_shape['points'][point_index][0][1]))
+                shape.close()
+
+                # 3. 오른쪽 Polygon Labels 아이템 추가를 한다.  
+                self.addLabel(shape)
+                tmp_item = self.labelList.findItemByShape(shape)
+                self.labelList.selectItem(tmp_item)
+                self.labelList.scrollToItem(tmp_item)
+        else:
+            print('subtractArea는 공통된 영역이 있어야 합니다.')
+            return
+
+        # 4. 캔버스에 Polygon 추가를 한다. 
+        self.canvas.loadShapes([item.shape() for item in self.labelList])
+        self.actions.save.setEnabled(True)
+    
 
 
     def pasteSelectedShape(self):
