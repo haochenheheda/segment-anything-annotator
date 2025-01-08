@@ -997,7 +997,6 @@ class MainWindow(QMainWindow):
 
     def newShape(self):
         """Pop-up and give focus to the label editor.
-
         position MUST be in global coordinates.
         """
         items = self.uniqLabelList.selectedItems()
@@ -1005,17 +1004,19 @@ class MainWindow(QMainWindow):
         if items:
             text = items[0].data(Qt.UserRole)
         flags = {}
-        group_id = None
+        group_id = self.getMaxId() + 1  # 995 update!
         if not text:
             previous_text = self.labelDialog.edit.text()
-            xx = self.labelDialog.popUp(text)
+            xx = self.labelDialog.popUp(text, group_id=group_id)
             if len(xx) == 4:
                 text, flags, group_id, _ = xx
             else:
                 text, flags, group_id = xx
             if not text:
                 self.labelDialog.edit.setText(previous_text)
-
+            
+            # self.labelDialog.group_id = group_id
+            
         if text and not self.validateLabel(text):
             self.errorMessage(
                 self.tr("Invalid label"),
@@ -1384,7 +1385,7 @@ class MainWindow(QMainWindow):
         shapes = [format_shape(item.shape()) for item in self.labelList.selectedItems()]
 
         if len(shapes) != 2:
-            print('Union Point는 2개의 Polygon을 선택해야 합니다.')
+            print('Union Point는 2개의 Polygon을 선택해야 합니다. : Union must be 2 polygons')
             self.canvas.loadShapes([item.shape() for item in self.labelList])
             self.actions.save.setEnabled(True)
             return
