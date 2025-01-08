@@ -658,7 +658,7 @@ class MainWindow(QMainWindow):
         if directory == '':
             return
         #self.img_list = glob.glob(directory + '/*.{jpg,png,JPG,PNG}')
-        self.img_list = glob.glob(directory + '/*.jpg') + glob.glob(directory + '/*.png')
+        self.img_list = glob.glob(directory + '/*.jpg') + glob.glob(directory + '/*.png') + glob.glob(directory + '/*.jpeg')
         self.img_list.sort()
         self.img_len = len(self.img_list)
         if self.img_len == 0:
