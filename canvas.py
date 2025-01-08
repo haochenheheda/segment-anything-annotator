@@ -811,7 +811,10 @@ class Canvas(QtWidgets.QWidget):
             return False  # No need to move
         o1 = pos + self.offsets[0]
         if self.outOfPixmap(o1):
-            pos -= QtCore.QPoint(min(0, o1.x()), min(0, o1.y()))
+            pos -= QtCore.QPoint(
+                int(min(0, o1.x())), 
+                int(min(0, o1.y()))
+            )
         o2 = pos + self.offsets[1]
         if self.outOfPixmap(o2):
             pos += QtCore.QPoint(
