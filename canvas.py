@@ -815,8 +815,8 @@ class Canvas(QtWidgets.QWidget):
         o2 = pos + self.offsets[1]
         if self.outOfPixmap(o2):
             pos += QtCore.QPoint(
-                min(0, self.pixmap.width() - o2.x()),
-                min(0, self.pixmap.height() - o2.y()),
+                int(min(0, self.pixmap.width() - o2.x())),
+                int(min(0, self.pixmap.height() - o2.y())),
             )
         # XXX: The next line tracks the new position of the cursor
         # relative to the shape, but also results in making it
