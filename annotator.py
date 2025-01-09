@@ -47,7 +47,7 @@ class MainWindow(QMainWindow):
     # 윈도우 크기 조절을 위한 상수들
     FIT_WINDOW, FIT_WIDTH, MANUAL_ZOOM = 0, 1, 2
 
-    def __init__(self, parent=None, global_w=1000, global_h=1800, model_type='vit_b', keep_input_size=True, max_size=1080):
+    def __init__(self, parent=None, global_w=1000, global_h=1600, model_type='vit_b', keep_input_size=True, max_size=1080):
         """
         메인 윈도우 초기화
         Args:
@@ -138,29 +138,24 @@ class MainWindow(QMainWindow):
         )
         self.shape_dock.setObjectName("Labels")
         self.shape_dock.setWidget(self.labelList)
+        self.shape_dock.setFeatures(QDockWidget.NoDockWidgetFeatures)  # 고정하여 이동할 수 없게 설정
 
-        # 자동 카테고리 리스트 업데이트 
-        self.category_list = [i.strip() for i in open('categories.txt', 'r', encoding='utf-8').readlines()]
-        self.labelDialog = LabelDialog(
-            parent=self,
-            labels=self.category_list,
-            sort_labels=False,
-            show_text_field=True,
-            completion='contains',
-            fit_to_content={'column': True, 'row': False},
-        )
-
+        # 줌 변수 초기화
         self.zoom_values = {}
+
+        # 비디오 변수 
         self.video_directory = ''
         self.video_list = []
         self.video_len = len(self.video_list)
 
+        # 이미지 변후 
         self.img_list = []
         self.img_len = len(self.img_list)
         self.current_img_index = 0
         self.current_img = ''
         self.current_img_data = ''
 
+        # 버튼 설정
         self.button_next = QPushButton('Next Image', self)
         self.button_next.clicked.connect(self.clickButtonNext)
         self.button_next.setShortcut('.')
@@ -188,35 +183,47 @@ class MainWindow(QMainWindow):
         
         self.class_on_flag = True
         self.class_on_text = QLabel("Class On", self)
-        
+        self.class_on_text.setVisible(False)
 
-        #naive layout
+        # 상태창 설정
+        self.category_file_flag = False
+        self.category_file = QLabel("Category file : None", self)
+        self.image_dir_flag = False
+        self.image_dir = QLabel("Image dir : None", self)
+        self.save_dir_flag = False
+        self.save_dir = QLabel("Save dir : None", self)
+        
+        # layout 설정
         self.scrollArea.move(int(0.02 * global_w), int(0.08 * global_h))
         self.scrollArea.resize(int(0.75 * global_w), int(0.7 * global_h))
         self.shape_dock.move(int(0.79 * global_w), int(0.08 * global_h))
         self.shape_dock.resize(int(0.2 * global_w), int(0.7 * global_h))
+
         self.button_next.move(int(0.18 * global_w), int(0.85 * global_h))
         self.button_next.resize(int(0.1 * global_w),int(0.04 * global_h))
         self.button_last.move(int(0.01 * global_w), int(0.85 * global_h))
         self.button_last.resize(int(0.1 * global_w),int(0.04 * global_h))
+
         self.class_on_text.move(int(0.01 * global_w), int(0.9 * global_h))
+
         self.img_progress_bar.move(int(0.01 * global_w), int(0.8 * global_h))
         self.img_progress_bar.resize(int(0.3 * global_w),int(0.04 * global_h))
-        
-        self.button_proposal1.resize(int(0.17 * global_w),int(0.14 * global_h))
-        self.button_proposal1.move(int(0.33 * global_w), int(0.8 * global_h))
-        self.button_proposal2.resize(int(0.17 * global_w),int(0.14 * global_h))
-        self.button_proposal2.move(int(0.50 * global_w), int(0.8 * global_h))
-        self.button_proposal3.resize(int(0.17 * global_w),int(0.14 * global_h))
-        self.button_proposal3.move(int(0.67 * global_w), int(0.8 * global_h))
-        self.button_proposal4.resize(int(0.17 * global_w),int(0.14 * global_h))
-        self.button_proposal4.move(int(0.84 * global_w), int(0.8 * global_h))
-        
-    
-        self.zoomWidget = ZoomWidget()
 
+        self.category_file.move(int(0.01 * global_w), int(0.9 * global_h))
+        self.image_dir.move(int(0.01 * global_w), int(0.93 * global_h))
+        self.save_dir.move(int(0.01 * global_w), int(0.96 * global_h))
+
+        self.button_proposal1.resize(int(0.16 * global_w),int(0.14 * global_h))
+        self.button_proposal1.move(int(0.33 * global_w), int(0.8 * global_h))
+        self.button_proposal2.resize(int(0.16 * global_w),int(0.14 * global_h))
+        self.button_proposal2.move(int(0.49 * global_w), int(0.8 * global_h))
+        self.button_proposal3.resize(int(0.16 * global_w),int(0.14 * global_h))
+        self.button_proposal3.move(int(0.65 * global_w), int(0.8 * global_h))
+        self.button_proposal4.resize(int(0.16 * global_w),int(0.14 * global_h))
+        self.button_proposal4.move(int(0.81 * global_w), int(0.8 * global_h))
+           
+        self.zoomWidget = ZoomWidget()
         action = functools.partial(utils.newAction, self)
-        
 
         categoryFile = action(
             self.tr("Category File"),
@@ -250,6 +257,7 @@ class MainWindow(QMainWindow):
             self.tr("Load SAM"),
             enabled=True,
         )
+        
         # AutoSeg = action(
         #     self.tr("AutoSeg"),
         #     lambda: self.clickAutoSeg(),
@@ -258,6 +266,7 @@ class MainWindow(QMainWindow):
         #     self.tr("AutoSeg"),
         #     enabled=False,
         # )
+
         promptSeg = action(
             self.tr("Accept"),
             lambda: self.addSamMask(),
@@ -265,6 +274,14 @@ class MainWindow(QMainWindow):
             "objects",
             self.tr("Accept"),
             enabled=False,
+        )
+        cleanPrompt = action(
+            self.tr("Reject"),
+            lambda: self.cleanPrompt(),
+            'r',
+            "objects",
+            self.tr("Reject"),
+            enabled=True,
         )
         createMode = action(
             self.tr("Manual Polygons"),
@@ -290,14 +307,6 @@ class MainWindow(QMainWindow):
             self.tr("Box Prompt"),
             enabled=True,
         )
-        cleanPrompt = action(
-            self.tr("Reject"),
-            lambda: self.cleanPrompt(),
-            'r',
-            "objects",
-            self.tr("Reject"),
-            enabled=True,
-        )
         
         self.switchClass = action(
             self.tr("Class On/Off"),
@@ -307,7 +316,6 @@ class MainWindow(QMainWindow):
             self.tr("Class On/Off"),
             enabled=True,
         )
-
         editMode = action(
             self.tr("Edit Polygons"),
             self.setEditMode,
@@ -332,8 +340,6 @@ class MainWindow(QMainWindow):
             self.tr("Undo last drawn point"),
             enabled=False,
         )
-
-
         hideAll = action(
             self.tr("&Hide\nPolygons"),
             functools.partial(self.togglePolygons, False),
@@ -357,7 +363,6 @@ class MainWindow(QMainWindow):
             self.tr("Undo last add and edit of shape"),
             enabled=False,
         )
-
         save = action(
             self.tr("&Save"),
             self.saveFile,
@@ -460,12 +465,12 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(categoryFile)
         self.toolbar.addAction(imageDirectory)
         self.toolbar.addAction(saveDirectory)
+        self.switchClass.setVisible(False)
         self.toolbar.addAction(self.switchClass)
         self.toolbar.addAction(LoadSAM)
-        #self.toolbar.addAction(AutoSeg)
-        self.toolbar.addAction(promptSeg)
-        self.toolbar.addAction(cleanPrompt)
-        self.toolbar.addAction(createMode)
+        self.toolbar.addAction(promptSeg) # accpet
+        self.toolbar.addAction(cleanPrompt) # reject
+        self.toolbar.addAction(createMode) # manual polygon
         self.toolbar.addAction(createPointMode)
         self.toolbar.addAction(createRectangleMode)
         self.toolbar.addAction(editMode)
@@ -474,6 +479,7 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(delete)
         self.toolbar.addAction(edit)
         self.toolbar.addAction(duplicate)
+        duplicate.setVisible(False)
         self.toolbar.addAction(reduce_point)
         self.toolbar.addAction(union_point)
         self.toolbar.addAction(subtract_area)
@@ -674,7 +680,6 @@ class MainWindow(QMainWindow):
         directory = QFileDialog.getExistingDirectory(self, 'choose target fold','.')
         if directory == '':
             return
-        #self.img_list = glob.glob(directory + '/*.{jpg,png,JPG,PNG}')
         self.img_list = glob.glob(directory + '/*.jpg') + glob.glob(directory + '/*.png') + glob.glob(directory + '/*.jpeg')
         self.img_list.sort()
         self.img_len = len(self.img_list)
@@ -685,6 +690,11 @@ class MainWindow(QMainWindow):
         self.img_progress_bar.setMinimum(0)
         self.img_progress_bar.setMaximum(self.img_len-1)
         self.loadImg()
+        # change status 
+        self.image_dir_flag = True
+        self.image_dir.setText('Image dir : {}'.format(directory))
+        self.image_dir.adjustSize()
+        self.image_dir.move(int(0.01 * global_w), int(0.93 * global_h))
 
     def clickSaveChoose(self):
         directory = QFileDialog.getExistingDirectory(self, 'choose target fold','.')
@@ -694,8 +704,11 @@ class MainWindow(QMainWindow):
             self.current_output_dir = directory
             os.makedirs(self.current_output_dir, exist_ok=True)
             self.loadImg()
+            self.save_dir_flag = True
+            self.save_dir.setText('Save dir : {}'.format(directory))
+            self.save_dir.adjustSize()
+            self.save_dir.move(int(0.01 * global_w), int(0.96 * global_h))
             return directory
-
 
     def clickSwitchClass(self):
         if self.class_on_flag:
@@ -721,26 +734,51 @@ class MainWindow(QMainWindow):
                     completion='contains',
                     fit_to_content={'column': True, 'row': False},
                 )
+                self.category_file_flag = True
+                self.category_file.setText('Category file : {}'.format(filename))
+                self.category_file.adjustSize()
+                self.category_file.move(int(0.01 * global_w), int(0.9 * global_h))
+
         except Exception as e:
             pass
 
     def clickLoadSAM(self):
-        download_model(self.model_type)
-        tuned_model_name, _ = QFileDialog.getOpenFileName(self, 'choose target file','.')
-        if tuned_model_name == '':
-            return
-        try: 
-            tuned_model_name.split('.')[-1] == 'pth'
-        except:
-            print('please choose a .pth file!')
-            return
-        self.sam = sam_model_registry[self.model_type](checkpoint='{}'.format(tuned_model_name))  # build_sam_vit_h
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.sam.to(device=self.device)
-        print('load sam model success!')
-        self.predictor = SamPredictor(self.sam)
-        self.actions.loadSAM.setEnabled(False)
-        self.actions.promptSeg.setEnabled(True)
+        
+        if self.image_dir_flag == True and self.save_dir_flag == True and self.category_file_flag == True:
+            download_model(self.model_type)
+            tuned_model_name, _ = QFileDialog.getOpenFileName(self, 'choose target file','.')
+            if tuned_model_name == '':
+                return
+            try: 
+                tuned_model_name.split('.')[-1] == 'pth'
+            except:
+                print('please choose a .pth file!')
+                return
+            self.sam = sam_model_registry[self.model_type](checkpoint='{}'.format(tuned_model_name))  # build_sam_vit_h
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.sam.to(device=self.device)
+            print('load sam model success!')
+            self.predictor = SamPredictor(self.sam)
+            self.actions.loadSAM.setEnabled(False)
+            self.actions.promptSeg.setEnabled(True)
+                
+        else:
+            # 각 Flag가 False인 경우에 대한 메시지 생성
+            missing_items = []
+            if not self.image_dir_flag:
+                missing_items.append("이미지 디렉토리")
+            if not self.save_dir_flag:
+                missing_items.append("저장 디렉토리")
+            if not self.category_file_flag:
+                missing_items.append("카테고리 파일")
+                
+            # QMessageBox를 사용하여 경고 메시지 표시
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("설정 필요")
+            msg.setText("다음 항목을 먼저 설정해주세요:\n\n" + "\n".join(missing_items))
+            msg.exec_()
+            return 
     
     def clickAutoSeg(self):
         pass
@@ -1041,20 +1079,7 @@ class MainWindow(QMainWindow):
     def setDirty(self):
         # Even if we autosave the file, we keep the ability to undo
         self.actions.undo.setEnabled(self.canvas.isShapeRestorable)
-
-        # if self._config["auto_save"] or self.actions.saveAuto.isChecked():
-        #     label_file = osp.splitext(self.imagePath)[0] + ".json"
-        #     if self.output_dir:
-        #         label_file_without_path = osp.basename(label_file)
-        #         label_file = osp.join(self.output_dir, label_file_without_path)
-        #     self.saveLabels(label_file)
-        #     return
-        # self.dirty = True
         self.actions.save.setEnabled(True)
-        # title = __appname__
-        # if self.filename is not None:
-        #     title = "{} - {}*".format(title, self.filename)
-        # self.setWindowTitle(title)
 
     # React to canvas signals.
     def shapeSelectionChanged(self, selected_shapes):
@@ -1115,6 +1140,7 @@ class MainWindow(QMainWindow):
                 self.actions.createMode.setEnabled(True)
                 self.actions.createPointMode.setEnabled(False)
                 self.actions.createRectangleMode.setEnabled(True)
+            
             elif createMode == "rectangle":
                 self.actions.createMode.setEnabled(True)
                 self.actions.createPointMode.setEnabled(True)
@@ -1292,6 +1318,7 @@ class MainWindow(QMainWindow):
             self.addLabel(shape)
         self.labelList.clearSelection()
         self.setDirty()
+
     def deleteSelectedShape(self):
         #yes, no = QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No
         #msg = self.tr(
@@ -1551,8 +1578,6 @@ class MainWindow(QMainWindow):
         # 4. 캔버스에 Polygon 추가를 한다. 
         self.canvas.loadShapes([item.shape() for item in self.labelList])
         self.actions.save.setEnabled(True)
-    
-
 
     def pasteSelectedShape(self):
         self.loadShapes(self._copied_shapes, replace=False)
@@ -1572,7 +1597,6 @@ class MainWindow(QMainWindow):
         for shape in shapes:
             item = self.labelList.findItemByShape(shape)
             self.labelList.removeItem(item)
-
 
     def noShapes(self):
         return not len(self.labelList)
