@@ -1,3 +1,4 @@
+import io
 import sys
 import functools
 import cv2
@@ -13,6 +14,7 @@ import numpy as np
 import tempfile
 import torch
 import base64
+
 
 from PyQt5.QtWidgets import QWidget, QApplication, QMainWindow, QApplication, QPushButton, QLabel, QFileDialog, QProgressBar, QComboBox, QScrollArea, QDockWidget, QMessageBox
 from PyQt5.QtGui import QPixmap, QIcon, QImage
@@ -30,6 +32,7 @@ from labelme.label_file import LabelFile
 from labelme.label_file import LabelFileError
 
 
+from parse_json_output import parse_json, get_normalized_cxwyh_bbox
 from shape import Shape
 
 from PIL import Image
@@ -257,7 +260,7 @@ class MainWindow(QMainWindow):
             self.tr("Load SAM"),
             enabled=True,
         )
-        
+
         # AutoSeg = action(
         #     self.tr("AutoSeg"),
         #     lambda: self.clickAutoSeg(),
@@ -420,7 +423,22 @@ class MainWindow(QMainWindow):
             self.tr("Subtract Area"),
             enabled=True,
         )       
-        
+        cvt_output_yolo_format = action(
+            self.tr("YOLO format"),
+            self.cvt_output_yolo,
+            'None',
+            "cvt",
+            self.tr("YOLO format"),
+            enabled=True,
+        )       
+        cvt_output_coco_format = action(
+            self.tr("COCO format"),
+            self.cvt_output_coco,
+            'None',
+            "cvt",
+            self.tr("COCO format"),
+            enabled=True,
+        )
 
         self.actions = utils.struct(
             categoryFile=categoryFile,
@@ -442,6 +460,11 @@ class MainWindow(QMainWindow):
             reduce_point=reduce_point,
             save=save,
             onShapesPresent=(saveAs, hideAll, showAll),
+
+            # new action 
+            cvt_output_yolo_format=cvt_output_yolo_format,
+            cvt_output_coco_format=cvt_output_coco_format,
+
             menu=(
                 createMode,
                 editMode,
@@ -484,6 +507,8 @@ class MainWindow(QMainWindow):
         self.toolbar.addAction(union_point)
         self.toolbar.addAction(subtract_area)
         self.toolbar.addAction(save)
+        self.toolbar.addAction(cvt_output_yolo_format)
+        self.toolbar.addAction(cvt_output_coco_format)  
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextOnly)
 
         zoom = QtWidgets.QWidgetAction(self)
@@ -697,18 +722,33 @@ class MainWindow(QMainWindow):
         self.image_dir.move(int(0.01 * global_w), int(0.93 * global_h))
 
     def clickSaveChoose(self):
-        directory = QFileDialog.getExistingDirectory(self, 'choose target fold','.')
-        if directory == '':
+
+        if self.category_file_flag == True and self.image_dir_flag == True:
+            directory = QFileDialog.getExistingDirectory(self, 'choose target fold','.')
+            if directory == '':
+                return
+            else:
+                self.current_output_dir = directory
+                os.makedirs(self.current_output_dir, exist_ok=True)
+                self.loadImg()
+                self.save_dir_flag = True
+                self.save_dir_path = directory
+                self.save_dir.setText('Save dir : {}'.format(directory))
+                self.save_dir.adjustSize()
+                self.save_dir.move(int(0.01 * global_w), int(0.96 * global_h))
+                return directory
+        else: 
+            missing_items = []
+            if not self.category_file_flag:
+                missing_items.append("카테고리 파일")
+            if not self.image_dir_flag:
+                missing_items.append("이미지 디렉토리")
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("설정 필요")
+            msg.setText("다음 항목을 먼저 설정해주세요:\n\n" + "\n".join(missing_items))
+            msg.exec_()
             return
-        else:
-            self.current_output_dir = directory
-            os.makedirs(self.current_output_dir, exist_ok=True)
-            self.loadImg()
-            self.save_dir_flag = True
-            self.save_dir.setText('Save dir : {}'.format(directory))
-            self.save_dir.adjustSize()
-            self.save_dir.move(int(0.01 * global_w), int(0.96 * global_h))
-            return directory
 
     def clickSwitchClass(self):
         if self.class_on_flag:
@@ -721,6 +761,7 @@ class MainWindow(QMainWindow):
 
     def clickCategoryChoose(self):
         filename, _ = QFileDialog.getOpenFileName(self, 'choose target file','.')
+        self.category_file_path = filename
         try:
             with open(filename, 'r') as f:
                 data = f.readlines()
@@ -1042,7 +1083,7 @@ class MainWindow(QMainWindow):
         if items:
             text = items[0].data(Qt.UserRole)
         flags = {}
-        group_id = self.getMaxId() + 1  # 995 update!
+        group_id = self.getMaxId() + 1  # 새로운 그룹 ID 생성
         if not text:
             previous_text = self.labelDialog.edit.text()
             xx = self.labelDialog.popUp(text, group_id=group_id)
@@ -1221,8 +1262,7 @@ class MainWindow(QMainWindow):
 
         self._update_shape_color(shape)
         if shape.group_id is None:
-            item.setText(
-                '{} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
+            item.setText('{} <font color="#{:02x}{:02x}{:02x}">●</font>'.format(
                     html.escape(shape.label), *shape.fill_color.getRgb()[:3]
                 )
             )
@@ -1455,7 +1495,7 @@ class MainWindow(QMainWindow):
                 group_id=tmp_shape['group_id'],
             )
             for point_index in range(len(tmp_shape['points'])):
-                shape.addPoint(QtCore.QPointF(tmp_shape['points'][point_index][0][0], tmp_shape['points'][point_index][0][1]))
+                shape.addPoint(QtCore.QPointF(tmp_shape['points'][point_index][0], tmp_shape['points'][point_index][1]))
             shape.close()
 
             # 3. 오른쪽 Polygon Labels 아이템 추가를 한다.  
@@ -1619,6 +1659,143 @@ class MainWindow(QMainWindow):
         self.canvas.adjustSize()
         self.canvas.update()
 
+    def cvt_output_yolo(self):
+        if self.save_dir_flag == True and self.category_file_flag == True:
+            
+            # .json 파일 존재 여부 확인 - glob 사용
+            json_files = glob.glob(os.path.join(self.save_dir_path, '*.json'))
+            
+            if not json_files:
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Warning) 
+                msg.setText("저장 디렉토리에 .json 파일이 없습니다.")
+                msg.exec_()
+                return
+            
+            # 클래스 딕셔너리 만들기 
+            classes = [i.strip() for i in open(self.category_file_path, 'r', encoding='utf-8').readlines()]
+            class_dict = {}
+            for i, class_name in enumerate(classes):
+                class_dict[class_name] = i
+
+            # YOLO 형식 저장을 위한 디렉토리 생성
+            yolo_path = os.path.join(self.save_dir_path, 'yolo')
+            os.makedirs(yolo_path, exist_ok=True)
+            os.makedirs(os.path.join(yolo_path, 'images'), exist_ok=True)
+            os.makedirs(os.path.join(yolo_path, 'labels'), exist_ok=True)
+
+            print("class_dict : ", class_dict)
+
+            print(f"처리할 JSON 파일 목록: {json_files}")
+
+            for json_file in json_files:
+                image, labels, bboxes, masks = parse_json(json_file, class_dict)
+
+                # yolo 형식으로 변환 - normalize cxwyh bbox
+                bboxes = [get_normalized_cxwyh_bbox(bbox, image.shape[1], image.shape[0]) for bbox in bboxes]
+                image_name = os.path.basename(json_file).split('.')[0]
+                
+                # 이미지와 라벨 저장
+                cv2.imwrite(os.path.join(yolo_path, 'images', f'{image_name}.jpg'), image)
+                with open(os.path.join(yolo_path, 'labels', f'{image_name}.txt'), 'w') as f:
+                    for label, bbox, mask in zip(labels, bboxes, masks):
+                        f.write(f'{label} {bbox[0]} {bbox[1]} {bbox[2]} {bbox[3]}\n')
+                           
+            # 변환 완료 메시지
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Information)
+            msg.setText(f"YOLO 형식 변환이 완료되었습니다.\n저장 위치: {yolo_path}")
+            msg.exec_()
+            
+        else:
+            # 각 Flag가 False인 경우에 대한 메시지 생성
+            missing_items = []
+            if not self.category_file_flag:
+                missing_items.append("카테고리 파일")
+            if not self.save_dir_flag:
+                missing_items.append("저장 디렉토리")
+            
+            # QMessageBox를 사용하여 경고 메시지 표시
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("설정 필요")
+            msg.setText("다음 항목을 먼저 설정해주세요:\n\n" + "\n".join(missing_items))
+            msg.exec_()
+            return
+        
+
+
+        return 
+
+    def cvt_output_coco(self):
+        if self.save_dir_flag == True and self.category_file_flag == True:  
+
+            json_files = glob.glob(os.path.join(self.save_dir_path, '*.json'))
+
+            if not json_files:
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Warning) 
+                msg.setText("저장 디렉토리에 .json 파일이 없습니다.")
+                msg.exec_()
+                return
+            
+            # 클래스 딕셔너리 만들기 
+            classes = [i.strip() for i in open(self.category_file_path, 'r', encoding='utf-8').readlines()]
+            class_dict = {}
+            for i, class_name in enumerate(classes):
+                class_dict[class_name] = i
+
+            # YOLO 형식 저장을 위한 디렉토리 생성
+            yolo_path = os.path.join(self.save_dir_path, 'coco')
+            os.makedirs(yolo_path, exist_ok=True)
+            os.makedirs(os.path.join(yolo_path, 'images'), exist_ok=True)
+            # os.makedirs(os.path.join(yolo_path, 'labels'), exist_ok=True)
+
+            print("class_dict : ", class_dict)
+
+            for json_file in json_files:
+                image, labels, bboxes, masks = parse_json(json_file, class_dict)
+
+                # # coco 형식으로 변환 - normalize cxwyh bbox
+                # bboxes = [get_normalized_cxwyh_bbox(bbox, image.shape[1], image.shape[0]) for bbox in bboxes]
+                # image_name = os.path.basename(json_file).split('.')[0]
+                
+                # # 이미지와 라벨 저장
+                # cv2.imwrite(os.path.join(yolo_path, 'images', f'{image_name}.jpg'), image)
+                # with open(os.path.join(yolo_path, 'labels', f'{image_name}.txt'), 'w') as f:
+                #     for label, bbox, mask in zip(labels, bboxes, masks):
+                #         f.write(f'{label} {bbox[0]} {bbox[1]} {bbox[2]} {bbox[3]}\n')
+                           
+            # 변환 완료 메시지
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Information)
+            msg.setText(f"COCO 형식 변환이 완료되었습니다.\n저장 위치: {yolo_path}")
+            msg.exec_()
+            
+        else:
+            # 각 Flag가 False인 경우에 대한 메시지 생성
+            missing_items = []
+            if not self.category_file_flag:
+                missing_items.append("카테고리 파일")
+            if not self.save_dir_flag:
+                missing_items.append("저장 디렉토리")
+            
+            # QMessageBox를 사용하여 경고 메시지 표시
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Warning)
+            msg.setWindowTitle("설정 필요")
+            msg.setText("다음 항목을 먼저 설정해주세요:\n\n" + "\n".join(missing_items))
+            msg.exec_()
+            return
+    
+        return 
+
+# def stringToRGB(base64_string):
+#     "문자열을 이미지 RGB로 나타낼 때 "
+#     imgdata = base64.b64decode(base64_string)
+#     dataBytesIO = io.BytesIO(imgdata)
+#     image = Image.open(dataBytesIO)
+#     return cv2.cvtColor(np.array(image), cv2.COLOR_BGR2RGB) # 
 
 def get_parser():
     parser = argparse.ArgumentParser(description="pixel annotator by GroundedSAM")
