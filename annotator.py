@@ -12,6 +12,7 @@ import math
 import argparse
 import numpy as np
 import tempfile
+import yaml
 import torch
 import base64
 
@@ -1603,7 +1604,7 @@ class MainWindow(QMainWindow):
                     group_id=tmp_shape['group_id'],
                 )
                 for point_index in range(len(tmp_shape['points'])):
-                    shape.addPoint(QtCore.QPointF(tmp_shape['points'][point_index][0][0], tmp_shape['points'][point_index][0][1]))
+                    shape.addPoint(QtCore.QPointF(tmp_shape['points'][point_index][0], tmp_shape['points'][point_index][1]))
                 shape.close()
 
                 # 3. 오른쪽 Polygon Labels 아이템 추가를 한다.  
@@ -1674,22 +1675,26 @@ class MainWindow(QMainWindow):
             
             # 클래스 딕셔너리 만들기 
             classes = [i.strip() for i in open(self.category_file_path, 'r', encoding='utf-8').readlines()]
+            # e.g
+            # classes = ['adaptor', 'adaptor_p', 'drain', 'fitting_s', 'fitting_l', 'fitting_t', 'fitting_stem_l', 'regulator', 'regulator_s', 'regulator_l', 'locking_clip', 'locking_clip_other_red', 'locking_clip_other_blue', 'handvalve_s', 'handvalve_l']
             class_dict = {}
             for i, class_name in enumerate(classes):
                 class_dict[class_name] = i
+            # class_dict = {'adaptor': 0, 'adaptor_p': 1, 'drain': 2, 'fitting_s': 3, 'fitting_l': 4, 'fitting_t': 5, 'fitting_stem_l': 6, 'regulator': 7, 'regulator_s': 8, 'regulator_l': 9, 'locking_clip': 10, 'locking_clip_other_red': 11, 'locking_clip_other_blue': 12, 'handvalve_s': 13, 'handvalve_l': 14}
 
             # YOLO 형식 저장을 위한 디렉토리 생성
             yolo_path = os.path.join(self.save_dir_path, 'yolo')
             os.makedirs(yolo_path, exist_ok=True)
             os.makedirs(os.path.join(yolo_path, 'images'), exist_ok=True)
             os.makedirs(os.path.join(yolo_path, 'labels'), exist_ok=True)
+            os.makedirs(os.path.join(yolo_path, 'yaml'), exist_ok=True)
 
             print("class_dict : ", class_dict)
 
             print(f"처리할 JSON 파일 목록: {json_files}")
 
             for json_file in json_files:
-                image, labels, bboxes, masks = parse_json(json_file, class_dict)
+                image, labels, bboxes, masks, points = parse_json(json_file, class_dict)
 
                 # yolo 형식으로 변환 - normalize cxwyh bbox
                 bboxes = [get_normalized_cxwyh_bbox(bbox, image.shape[1], image.shape[0]) for bbox in bboxes]
@@ -1700,7 +1705,30 @@ class MainWindow(QMainWindow):
                 with open(os.path.join(yolo_path, 'labels', f'{image_name}.txt'), 'w') as f:
                     for label, bbox, mask in zip(labels, bboxes, masks):
                         f.write(f'{label} {bbox[0]} {bbox[1]} {bbox[2]} {bbox[3]}\n')
-                           
+
+                # .yaml 파일 생성
+                yaml_data = {
+                    # 클래스 딕셔너리 만들기 
+                    'names': {i: class_name for i, class_name in enumerate(classes)},
+                    'path': '** set data_path **',
+                    'train': '** set train_path **',
+                    'val': '** set val_path **'
+                }
+                
+                # yaml 주석 추가 
+                yaml_str = (
+                    "# YOLO 설정 파일\n"
+                    "# put this yaml file in ~/ultralytics/ultralytics/cfg/datasets/ \n"
+                    "# names: 클래스 정의\n"
+                    "# path: 데이터 경로\n"
+                    "# train: 훈련 이미지 경로\n"
+                    "# val: 검증 이미지 경로\n"
+                )
+                yaml_str += yaml.dump(yaml_data, sort_keys=False)
+                
+                with open(os.path.join(yolo_path, 'yaml', 'yolo_setting_data.yaml'), 'w', encoding='utf-8') as f:
+                    f.write(yaml_str)
+
             # 변환 완료 메시지
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Information)
@@ -1722,9 +1750,6 @@ class MainWindow(QMainWindow):
             msg.setText("다음 항목을 먼저 설정해주세요:\n\n" + "\n".join(missing_items))
             msg.exec_()
             return
-        
-
-
         return 
 
     def cvt_output_coco(self):
@@ -1745,7 +1770,7 @@ class MainWindow(QMainWindow):
             for i, class_name in enumerate(classes):
                 class_dict[class_name] = i
 
-            # YOLO 형식 저장을 위한 디렉토리 생성
+            # COCO 형식 저장을 위한 디렉토리 생성
             yolo_path = os.path.join(self.save_dir_path, 'coco')
             os.makedirs(yolo_path, exist_ok=True)
             os.makedirs(os.path.join(yolo_path, 'images'), exist_ok=True)
