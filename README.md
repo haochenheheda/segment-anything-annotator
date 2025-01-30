@@ -1,3 +1,87 @@
+# Fork to fix the dependecies conflicts
+
+I suggest using [uv](https://github.com/astral-sh/uv) as python package manager. The requirements.txt to avoid conflicts is the following, using python 3.10.12:
+
+| Package                 | Version     |
+|-------------------------|-------------|
+| appdirs                 | 1.4.4       |
+| beautifulsoup4          | 4.12.3      |
+| black                   | 21.7b0      |
+| certifi                 | 2024.12.14  |
+| charset-normalizer      | 3.4.1       |
+| click                   | 8.0.4       |
+| colorama                | 0.4.6       |
+| coloredlogs             | 15.0.1      |
+| contourpy               | 1.3.1       |
+| cycler                  | 0.12.1      |
+| filelock                | 3.11.0      |
+| flake8                  | 3.9.2       |
+| flatbuffers             | 23.3.3      |
+| fonttools               | 4.55.7      |
+| fsspec                  | 2024.12.0   |
+| gdown                   | 5.2.0       |
+| humanfriendly           | 10.0        |
+| idna                    | 3.10        |
+| imageio                 | 2.37.0      |
+| imgviz                  | 1.7.5       |
+| importlib-resources     | 5.12.0      |
+| isort                   | 5.9.2       |
+| jinja2                  | 3.1.2       |
+| kiwisolver              | 1.4.8       |
+| labelme                 | 5.2.0       |
+| lazy-loader             | 0.4         |
+| loguru                  | 0.7.3       |
+| markupsafe              | 3.0.2       |
+| matplotlib              | 3.7.1       |
+| mccabe                  | 0.6.1       |
+| metaseg                 | 0.4.4       |
+| mpmath                  | 1.3.0       |
+| mypy-extensions         | 1.0.0       |
+| natsort                 | 8.3.1       |
+| networkx                | 3.1         |
+| numpy                   | 1.23.5      |
+| onnxruntime             | 1.14.1      |
+| opencv-python           | 4.7.0.72    |
+| osam                    | 0.2.2       |
+| packaging               | 24.2        |
+| pathspec                | 0.11.1      |
+| pillow                  | 9.5.0       |
+| protobuf                | 4.22.1      |
+| pycocotools             | 2.0.6       |
+| pycodestyle             | 2.7.0       |
+| pydantic                | 1.10.21     |
+| pyflakes                | 2.3.1       |
+| pyparsing               | 3.2.1       |
+| pyqt5                   | 5.15.9      |
+| pyqt5-qt5               | 5.15.2      |
+| pyqt5-sip               | 12.12.0     |
+| pyreadline3             | 3.5.4       |
+| pysocks                 | 1.7.1       |
+| python-dateutil         | 2.8.2       |
+| pyyaml                  | 6.0         |
+| qtpy                    | 2.3.1       |
+| regex                   | 2023.3.23   |
+| requests                | 2.28.2      |
+| scikit-image            | 0.24.0      |
+| scipy                   | 1.15.1      |
+| segment-anything        | 1.0         |
+| setuptools              | 63.2.0      |
+| six                     | 1.17.0      |
+| soupsieve               | 2.6         |
+| sympy                   | 1.11.1      |
+| termcolor               | 2.2.0       |
+| tifffile                | 2025.1.10   |
+| tomli                   | 1.2.3       |
+| torch                   | 2.1.2       |
+| torchvision             | 0.16.2      |
+| tqdm                    | 4.65.0      |
+| typing-extensions       | 4.5.0       |
+| urllib3                 | 1.26.20     |
+| win32-setctime          | 1.2.0       |
+| zipp                    | 3.15.0      |
+
+Make sure to run in a venv
+
 # segment-anything-annotator
 We developed a python UI based on labelme and segment-anything for pixel-level annotation. It support generating multiple masks by SAM(box/point prompt),  efficient polygon modification and category record. We will add more features (such as incorporating CLIP-based methods for category proposal and VOS methods for mask association of video datasets)
 
